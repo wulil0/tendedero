@@ -97,9 +97,10 @@ hanging twice.
 
 ## A history, not a cliff.
 
-A full line no longer lets its oldest card fall. It joins the history,
-piled up in the first place on the line. Rest on the pile, or click it, and
-the history spreads along the line, six at a time, with room to swipe
+The newest card hangs on the left, and each older one further right. A full
+line no longer lets its oldest card fall. It joins the history, piled up at
+the right end of the line. Rest on the pile, or click it, and the history
+spreads along the line, newest first, six at a time, with room to swipe
 through the rest. The line gives a little at either end and springs back.
 It piles up again when the line tucks away.
 

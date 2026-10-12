@@ -168,8 +168,9 @@ final class Line: ObservableObject {
     /// its spacing and is moved along by scrolling, as with Keep on line.
     var scrolls: Bool { Line.keepOnLine != nil || (historyExpanded && hasHistory) }
 
-    /// The history pile takes the first place on the line, spaced like a
-    /// card, so the whole row stays centred with even gaps.
+    /// The history pile takes the last place on the line, after the oldest
+    /// card, spaced like a card, so the whole row stays centred with even
+    /// gaps.
     private var lead: Int { hasHistory ? 1 : 0 }
 
     /// How many history cards an expanded history shows at once, between the
@@ -196,50 +197,55 @@ final class Line: ObservableObject {
     /// Whether the line scrolls on the panel's own width.
     var isScrolling: Bool { scrolling(width: width) }
 
-    /// While a line with history scrolls, the last place of the row stays
+    /// While a line with history scrolls, the first place of the row stays
     /// empty, to match the pile at the other end; cards fade into it.
     private var trail: Int { hasHistory && scrolls ? 1 : 0 }
 
-    /// Where the history pile hangs. While the line scrolls it stays put in
-    /// the first place of a full row, and the cards pass under it.
+    /// The first and last places of a full scrolling row.
+    private func rowEnds(width: CGFloat) -> (first: CGFloat, last: CGFloat) {
+        let (slots, step) = row(width: width)
+        let half = CGFloat(slots - 1) * step / 2
+        return (width / 2 - half, width / 2 + half)
+    }
+
+    /// Where the history pile hangs: after the oldest card. While the line
+    /// scrolls it stays put in the last place of a full row, and the cards
+    /// pass under it.
     func pileX(width: CGFloat) -> CGFloat {
-        if scrolling(width: width) {
-            let (slots, step) = row(width: width)
-            return width / 2 - CGFloat(slots - 1) * step / 2
-        }
-        return Layout.x(index: 0, count: shownCount + lead, width: width, visible: visibleCount,
+        if scrolling(width: width) { return rowEnds(width: width).last }
+        return Layout.x(index: shownCount, count: shownCount + lead, width: width, visible: visibleCount,
                         scroll: 0, scrolls: false)
     }
 
-    /// Where the card at `index` hangs. A piled card waits on the pile.
+    /// Where the card at `index` hangs. The newest hangs on the left and each
+    /// older one further right, towards the history pile; an expanded history
+    /// carries on after the oldest card, newest first. A piled card waits on
+    /// the pile.
     func x(of index: Int, width: CGFloat) -> CGFloat {
         let item = items[index]
         if isPiled(item) { return pileX(width: width) }
         let shown = shown
-        let i = shown.firstIndex { $0.id == item.id } ?? index
+        // Counted from the newest, which is last in `items`.
+        let place = shown.count - 1 - (shown.firstIndex { $0.id == item.id } ?? index)
         if scrolling(width: width) {
-            // The newest hangs in the last place of a full row (or the one
-            // before the empty place), the rest further left, brought into
-            // view by scrolling.
-            let (slots, step) = row(width: width)
-            let newest = width / 2 + CGFloat(slots - 1) * step / 2 - CGFloat(trail) * step
-            return newest - CGFloat(shown.count - 1 - i) * step + scroll
+            // The newest hangs in the first place after the empty one, the
+            // rest further right, brought into view by scrolling.
+            let step = row(width: width).step
+            let newest = rowEnds(width: width).first + CGFloat(trail) * step
+            return newest + CGFloat(place) * step - scroll
         }
-        return Layout.x(index: i + lead, count: shown.count + lead, width: width, visible: visibleCount,
+        return Layout.x(index: place, count: shown.count + lead, width: width, visible: visibleCount,
                         scroll: 0, scrolls: false)
     }
 
     /// How see-through a card is: cards fade before they reach the screen's
-    /// edge, or slide under the history pile.
+    /// edge, slide under the history pile on the right, or into the empty
+    /// place kept on the left while the line scrolls.
     func opacity(at x: CGFloat, width: CGFloat) -> CGFloat {
         let step = row(width: width).step
-        let left = hasHistory ? pileX(width: width) + step * 0.3 : 0
-        // With the empty place kept on the right, cards fade into it the
-        // same way they slide under the pile.
-        var right = width
-        if trail > 0 && scrolling(width: width) {
-            right = width / 2 + CGFloat(row(width: width).slots - 1) * step / 2 - step * 0.3
-        }
+        let right = hasHistory ? pileX(width: width) - step * 0.3 : width
+        var left: CGFloat = 0
+        if trail > 0 && scrolling(width: width) { left = rowEnds(width: width).first + step * 0.3 }
         return min(1, max(0, min(x - left, right - x) / 90))
     }
 
@@ -359,9 +365,10 @@ final class Line: ObservableObject {
 
     /// The photos hung before (left) or after (right) this one.
     func neighbours(of id: UUID, toTheLeft: Bool) -> [Pegged] {
+        // Newer cards hang to the left, older ones to the right.
         let live = items.filter { !$0.falling }
         guard let i = live.firstIndex(where: { $0.id == id }) else { return [] }
-        return toTheLeft ? Array(live[..<i]) : Array(live[(i + 1)...])
+        return toTheLeft ? Array(live[(i + 1)...]) : Array(live[..<i])
     }
 
     /// Takes down everything on one side of a photo. Each one goes the way
@@ -707,9 +714,10 @@ final class Line: ObservableObject {
     }
 
     func moveSelection(by step: Int) {
-        let cards = selectable
+        // In the order they hang, newest on the left.
+        let cards = Array(selectable.reversed())
         guard !cards.isEmpty else { return }
-        let i = cards.firstIndex { $0.id == selectedID } ?? cards.count - 1
+        let i = cards.firstIndex { $0.id == selectedID } ?? 0
         let next = cards[min(max(i + step, 0), cards.count - 1)]
         selectedID = next.id
         reveal(selected: next.id)
@@ -727,15 +735,16 @@ final class Line: ObservableObject {
         let x = x(of: index, width: width)
         let margin = Layout.spacing
         if opacity(at: x, width: width) < 1 || x < margin || x > width - margin {
-            // Moving the line right brings older cards in, and the other way.
-            let next = min(mostScroll, max(0, scroll + width / 2 - x))
+            // Moving the line left brings older cards in, and the other way.
+            let next = min(mostScroll, max(0, scroll + x - width / 2))
             withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { scroll = next }
         }
     }
 
     /// Quick Look on this photo, with the rest of the line a key press away.
     func quickLook(_ id: UUID) {
-        let live = items.filter { !$0.falling }
+        // In the order they hang, newest first.
+        let live = Array(items.filter { !$0.falling }.reversed())
         guard let index = live.firstIndex(where: { $0.id == id }) else { return }
         QuickLook.shared.show(live.map(\.url), at: index)
     }
