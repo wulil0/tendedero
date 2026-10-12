@@ -130,6 +130,16 @@ other way and typing carries on where it was.
 
 <br>
 
+## Light and dark.
+
+The line follows your Mac into dark mode and back. Notes, links, code and
+file cards turn to dark paper with light ink, and screenshots sit under a
+soft veil so a bright capture never glares. Rest the pointer on one to see
+it at full brightness. To keep the line light or dark whatever the system
+does, choose under Appearance in the menu bar.
+
+<br>
+
 ## Private by design.
 
 No account. No network. No analytics.
