@@ -181,6 +181,12 @@ open build/Tendedero.app
 scripts/install.sh
 ```
 
+想不通过菜单栏、直接设为登录时打开，可以这样打开一次：
+
+```sh
+open -a Tendedero --args --open-at-login
+```
+
 需要 Swift 工具链，Xcode 可选。若使用 macOS 27 的命令行工具，脚本会回退到随其一同安装的 macOS 26 SDK，因为新版 SDK 需要只有 Xcode 才带的 SwiftUI 宏插件。本地构建采用 ad-hoc 签名，所以每次重新构建后 macOS 都会再次询问桌面访问权限。若想保留权限，可在「钥匙串访问」中用「证书助理 → 创建证书」创建一个名为 `Tendedero Local`、类型为「代码签名」的自签名证书，脚本找到它时就会用它签名。
 
 <details>

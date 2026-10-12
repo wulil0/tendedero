@@ -194,6 +194,12 @@ Or build and install it in Applications in one go, replacing the copy there:
 scripts/install.sh
 ```
 
+To have it open at login without the menu bar, open it once with:
+
+```sh
+open -a Tendedero --args --open-at-login
+```
+
 Requires the Swift toolchain. Xcode is optional. With the Command Line Tools for macOS 27, the script falls back to the macOS 26 SDK they install alongside, because the new SDK needs a SwiftUI macro plugin only Xcode includes. Local builds are signed ad hoc,
 so macOS asks again for access to the Desktop after each rebuild. To keep
 that access, create a self-signed code signing certificate named

@@ -65,6 +65,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // `open -a Tendedero --args --open-at-login` turns on Open at login
+        // from the command line, as the menu bar item does, for scripts that
+        // install the app.
+        if CommandLine.arguments.contains("--open-at-login"), SMAppService.mainApp.status != .enabled {
+            do {
+                try SMAppService.mainApp.register()
+            } catch {
+                log.error("Could not open at login: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+        log.notice("Open at login: \(String(describing: SMAppService.mainApp.status), privacy: .public)")
+
         // Cards follow the system between light and dark, redrawn as it
         // switches, unless Appearance in the menu bar picks one.
         NSApp.appearance = Appearance.current.nsAppearance
