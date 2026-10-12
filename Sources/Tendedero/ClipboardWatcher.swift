@@ -11,6 +11,9 @@ import AppKit
 @MainActor
 final class ClipboardWatcher {
     private let onCopy: (URL) -> Void
+    /// The card already holding a text, so the same text copied again moves
+    /// that card to the newest end rather than hanging a second one.
+    private let findText: (String) -> URL?
     private var timer: Timer?
     private var lastCount = NSPasteboard.general.changeCount
     /// The last image or text saved. Some apps put the same thing on the
@@ -54,12 +57,16 @@ final class ClipboardWatcher {
     nonisolated private static let maxPixels = 80_000_000
     /// Text longer than this is a document, not a snippet.
     private static let maxTextBytes = 1024 * 1024
+    /// Formatting can carry embedded pictures; past this it is left out and
+    /// the text alone is kept.
+    private static let maxRichBytes = 8 * 1024 * 1024
     /// Copying a whole folder's worth of files in Finder would sweep
     /// everything else off the line.
     private static let maxFiles = 10
 
-    init(onCopy: @escaping (URL) -> Void) {
+    init(onCopy: @escaping (URL) -> Void, findText: @escaping (String) -> URL? = { _ in nil }) {
         self.onCopy = onCopy
+        self.findText = findText
     }
 
     func start() {
@@ -91,7 +98,7 @@ final class ClipboardWatcher {
         if items.contains(where: { $0.types.contains(.fileURL) }) {
             if Self.filesEnabled { hangFiles(items) }
         } else if items.contains(where: { $0.types.contains(.string) }) {
-            if Self.textEnabled, let text = pb.string(forType: .string) { saveText(text) }
+            if Self.textEnabled, let text = pb.string(forType: .string) { saveText(text, rich: richData(pb)) }
         } else if Self.isEnabled {
             readImage(pb, count: count)
         }
@@ -103,10 +110,23 @@ final class ClipboardWatcher {
         for url in urls.prefix(Self.maxFiles) { onCopy(url.standardizedFileURL) }
     }
 
-    private func saveText(_ text: String) {
+    /// The formatting that came with copied text: RTF from apps like Word
+    /// or Pages, or else HTML from a browser.
+    private func richData(_ pb: NSPasteboard) -> (Data, String)? {
+        for (type, ext) in [(NSPasteboard.PasteboardType.rtf, "rtf"), (.html, "html")] {
+            if let data = pb.data(forType: type), !data.isEmpty, data.count <= Self.maxRichBytes { return (data, ext) }
+        }
+        return nil
+    }
+
+    private func saveText(_ text: String, rich: (Data, String)?) {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               let data = text.data(using: .utf8), data.count <= Self.maxTextBytes else { return }
-        save(data, ext: "txt")
+        if let existing = findText(text) {
+            onCopy(existing)
+            return
+        }
+        save(data, ext: "txt", rich: rich)
     }
 
     private func readImage(_ pb: NSPasteboard, count: Int) {
@@ -133,7 +153,7 @@ final class ClipboardWatcher {
         return type == .png ? data : rep.representation(using: .png, properties: [:])
     }
 
-    private func save(_ data: Data, ext: String) {
+    private func save(_ data: Data, ext: String, rich: (Data, String)? = nil) {
         if let last, last.data == data, FileManager.default.fileExists(atPath: last.url.path) { return }
         let fm = FileManager.default
         var url = Inbox.folder.appendingPathComponent("Clipboard \(Self.stamp()).\(ext)")
@@ -147,6 +167,13 @@ final class ClipboardWatcher {
             try data.write(to: url, options: .atomic)
             // What people copy can be private: only they can read it.
             try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+            // The formatting sits beside the text, under the same name, and
+            // is written before the text hangs so its card knows of it.
+            if let (richData, richExt) = rich {
+                let richURL = url.deletingPathExtension().appendingPathExtension(richExt)
+                try? richData.write(to: richURL, options: .atomic)
+                try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: richURL.path)
+            }
             last = (data, url)
             onCopy(url)
         } catch {

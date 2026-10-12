@@ -74,3 +74,6 @@
 "Clear history" = "履歴を消去";
 "Hang the history on the line" = "履歴をロープに吊るす";
 "Pile up the history" = "履歴を重ねる";
+"Pin" = "ピン留め";
+"Unpin" = "ピン留めを外す";
+"Search" = "検索";

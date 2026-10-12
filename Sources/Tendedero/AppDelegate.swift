@@ -73,7 +73,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if Inbox.isEnabled { Inbox.apply() }
         restoreSettingsOnTermination()
         startWatcher()
-        clipboardWatcher = ClipboardWatcher { [weak self] url in self?.hangCapture(url) }
+        clipboardWatcher = ClipboardWatcher(
+            onCopy: { [weak self] url in self?.hangCapture(url) },
+            findText: { [weak self] text in self?.line.findText(text) })
         if ClipboardWatcher.isWatching { clipboardWatcher.start() }
 
         registerShortcut()
@@ -84,16 +86,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Markup.shared.onSaved = { [weak self] url in self?.line.reloadThumbnail(for: url) }
         Trim.shared.onSaved = { [weak self] url in self?.line.reloadThumbnail(for: url) }
         panel.onScroll = { [weak self] event in
+            guard let self else { return }
+            // Fingers lifted with no flick after, or a flick run out: the line
+            // springs back if it was pulled past an end.
+            if event.momentumPhase == .ended || (event.phase == .ended && event.momentumPhase == []) {
+                self.line.endScroll()
+                return
+            }
             // Sideways on a trackpad, or the wheel of a mouse.
             let delta = abs(event.scrollingDeltaX) >= abs(event.scrollingDeltaY)
                 ? event.scrollingDeltaX : event.scrollingDeltaY
-            self?.line.scroll(by: event.hasPreciseScrollingDeltas ? delta : delta * 12)
+            self.line.scroll(by: event.hasPreciseScrollingDeltas ? delta : delta * 12,
+                             momentum: event.momentumPhase != [])
         }
         line.onFall = { [weak self] item in
             HoverPreview.shared.hide()
             self?.fall(item)
         }
         line.onHover = { [weak self] item in self?.preview(item) }
+        panel.onKey = { [weak self] event in self?.handleKey(event) ?? false }
+
+        line.$historyExpanded
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.updateTakesKeys() }
+            .store(in: &cancellables)
 
         line.$items
             .receive(on: RunLoop.main)
@@ -401,6 +417,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         isRevealed = on
         line.revealed = on
         if !on { HoverPreview.shared.hide() }
+        // Text edited since the line was last down shows its new words.
+        if on { line.reloadEdited() }
+        if !on { releaseKeyboard() }
         // It always comes down showing the newest.
         if on { line.scroll = 0 }
         // Tucked away, the line leaves no window behind: an invisible strip
@@ -436,7 +455,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             updateCapacity()
             refresh()
             reveal(pinned: true)
+            takeKeyboard()
         }
+    }
+
+    // MARK: Keyboard
+
+    /// Opened with the shortcut, the line takes the keyboard: ← → choose a
+    /// card, Return copies it, Space shows it in Quick Look, ⌘1 to ⌘9 copy
+    /// the newest cards, Esc tucks the line away.
+    private func takeKeyboard() {
+        keyboardActive = true
+        updateTakesKeys()
+        panel.makeKey()
+        line.selectNewest()
+    }
+
+    private func releaseKeyboard() {
+        line.selectedID = nil
+        keyboardActive = false
+        updateTakesKeys()
+    }
+
+    /// Opened with the shortcut, or with the history spread out so its search
+    /// tag can be typed in. The panel only becomes key when the tag is
+    /// clicked or the shortcut opened it, so typing elsewhere is not taken.
+    private var keyboardActive = false
+
+    private func updateTakesKeys() {
+        let takes = keyboardActive || line.historyExpanded
+        panel.takesKeys = takes
+        if !takes && panel.isKeyWindow { panel.resignKey() }
+    }
+
+    private func handleKey(_ event: NSEvent) -> Bool {
+        let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if mods == .command, let digit = event.charactersIgnoringModifiers.flatMap(Int.init), digit >= 1 {
+            guard let item = line.newest(digit) else { NSSound.beep(); return true }
+            line.selectedID = item.id
+            line.copy(item.id)
+            return true
+        }
+        guard mods.isDisjoint(with: [.command, .control, .option]) else { return false }
+        switch Int(event.keyCode) {
+        case kVK_LeftArrow:
+            line.moveSelection(by: -1)
+        case kVK_RightArrow:
+            line.moveSelection(by: 1)
+        case kVK_Return, kVK_ANSI_KeypadEnter:
+            if let id = line.selectedID { line.copy(id) }
+        case kVK_Space:
+            if let id = line.selectedID { line.quickLook(id) }
+        case kVK_Escape:
+            if isRevealed { toggle() }
+        default:
+            return false
+        }
+        return true
     }
 
     private func startMouseTracking() {

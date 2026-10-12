@@ -74,3 +74,6 @@
 "Clear history" = "기록 지우기";
 "Hang the history on the line" = "기록을 빨랫줄에 걸기";
 "Pile up the history" = "기록 쌓아 두기";
+"Pin" = "고정";
+"Unpin" = "고정 해제";
+"Search" = "검색";

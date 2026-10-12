@@ -74,3 +74,6 @@
 "Clear history" = "Effacer l’historique";
 "Hang the history on the line" = "Accrocher l’historique à la corde";
 "Pile up the history" = "Empiler l’historique";
+"Pin" = "Épingler";
+"Unpin" = "Désépingler";
+"Search" = "Rechercher";

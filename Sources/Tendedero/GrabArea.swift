@@ -34,9 +34,14 @@ struct GrabArea: NSViewRepresentable {
         let archived = item.archived
         let url = item.url
         view.url = item.url
+        // Copied text drags as the text itself, which is what a chat box or
+        // a note wants, rather than as its .txt file.
+        view.dragText = item.isText ? { try? String(contentsOf: url, encoding: .utf8) } : nil
         view.passive = piled
         // The history pile is drawn over the cards that scroll under it.
-        view.isCovered = { point in line.hitRects[Line.historyID]?.contains(point) ?? false }
+        view.isCovered = { point in
+            [Line.historyID, Line.searchID].contains { line.hitRects[$0]?.contains(point) ?? false }
+        }
         view.dragImage = item.thumb
         view.onClick = { line.copy(id) }
         view.onDoubleClick = { line.open(id) }
@@ -62,6 +67,7 @@ struct GrabArea: NSViewRepresentable {
             // Items say themselves whether they can be used.
             menu.autoenablesItems = false
             menu.addItem(ClosureMenuItem(L("Copy")) { line.copy(id) })
+            menu.addItem(ClosureMenuItem(item.pinned ? L("Unpin") : L("Pin")) { line.togglePin(id) })
             if archived {
                 menu.addItem(ClosureMenuItem(L("Hang on the line again")) { line.hangAgain(url) })
             }
@@ -101,6 +107,8 @@ final class GrabView: NSView, NSDraggingSource {
     static var isShowingMenu = false
 
     var url: URL?
+    /// Set for copied text: the drag carries this text instead of the file.
+    var dragText: (() -> String?)?
     var dragImage: NSImage?
     /// Takes no mouse at all. SwiftUI's allowsHitTesting does not reach an
     /// AppKit view, so a hidden card says so here.
@@ -199,7 +207,8 @@ final class GrabView: NSView, NSDraggingSource {
         startedDrag = true
         endPress()
 
-        let item = NSDraggingItem(pasteboardWriter: url as NSURL)
+        let writer: NSPasteboardWriting = dragText?().map { $0 as NSString } ?? url as NSURL
+        let item = NSDraggingItem(pasteboardWriter: writer)
         item.setDraggingFrame(imageFrame(), contents: dragImage)
         let session = beginDraggingSession(with: [item], event: event, source: self)
         // Released where nothing accepts it: it flies back to the line.

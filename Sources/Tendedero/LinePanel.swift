@@ -32,7 +32,23 @@ final class LinePanel: NSPanel {
         }
     }
 
-    override var canBecomeKey: Bool { false }
+    /// Opened with the shortcut, the line takes the keyboard for the arrow
+    /// keys and the like, without bringing Tendedero to the front. Any other
+    /// time it never does, so typing goes on where it was.
+    var takesKeys = false
+    /// A key pressed while the line has the keyboard; true when handled.
+    var onKey: ((NSEvent) -> Bool)?
+
+    override var canBecomeKey: Bool { takesKeys }
+
+    override func keyDown(with event: NSEvent) {
+        if onKey?(event) != true { super.keyDown(with: event) }
+    }
+
+    /// ⌘1 to ⌘9 arrive as key equivalents rather than key presses.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        onKey?(event) == true || super.performKeyEquivalent(with: event)
+    }
     override var canBecomeMain: Bool { false }
 
     /// The line hangs on the screen you are using, which is the one with the

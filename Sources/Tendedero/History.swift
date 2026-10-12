@@ -76,6 +76,7 @@ struct HistoryPile: View {
         VStack(spacing: -12) {
             Clothespin()
                 .zIndex(1)
+            VStack(spacing: 0) {
             Group {
                 if line.historyExpanded { collapse } else { pile }
             }
@@ -89,6 +90,19 @@ struct HistoryPile: View {
                     Color.clear.preference(key: HitRectsKey.self, value: [Line.historyID: g.frame(in: .global)])
                 }
             )
+            // The search tag hangs from the expanded history on a short thread,
+            // like a label tied to a parcel.
+            if line.historyExpanded {
+                VStack(spacing: 0) {
+                    Rectangle()
+                        .fill(Color(white: 0.55))
+                        .frame(width: 1, height: 9)
+                    SearchTag(line: line)
+                }
+                .transition(.opacity.combined(with: .offset(y: -8)))
+            }
+            }
+            .animation(.spring(response: 0.4, dampingFraction: 0.75), value: line.historyExpanded)
         }
     }
 
@@ -130,7 +144,8 @@ struct HistoryPile: View {
         VStack(spacing: 4) {
             Image(systemName: "rectangle.stack")
                 .font(.system(size: 18, weight: .medium))
-            Text("\(line.history.count)")
+            // While searching, how many cards it found of all there are.
+            Text(line.query.isEmpty ? "\(line.history.count)" : "\(line.matchCount)/\(line.liveCount)")
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .monospacedDigit()
         }
@@ -162,6 +177,45 @@ struct HistoryPile: View {
             .padding(Frame.inset)
             .glassFrame(cornerRadius: Frame.radius)
             .shadow(color: .black.opacity(0.18), radius: 6, y: 3)
+    }
+}
+
+/// Searches the expanded history: only the history cards whose name or text
+/// holds what is typed stay on the line. Esc clears it, or with nothing
+/// typed, leaves it.
+struct SearchTag: View {
+    @ObservedObject var line: Line
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
+            TextField(L("Search"), text: $line.query)
+                .textFieldStyle(.plain)
+                .font(.system(size: 11))
+                .focused($focused)
+                .onExitCommand {
+                    if line.query.isEmpty { focused = false } else { line.query = "" }
+                }
+            if !line.query.isEmpty {
+                Button { line.query = "" } label: {
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 10))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 9)
+        .frame(width: 122, height: 24)
+        .glassFrame(capsule: true)
+        .shadow(color: .black.opacity(0.16), radius: 6, y: 3)
+        .background(
+            GeometryReader { g in
+                Color.clear.preference(key: HitRectsKey.self, value: [Line.searchID: g.frame(in: .global)])
+            }
+        )
     }
 }
 

@@ -74,3 +74,6 @@
 "Clear history" = "Geçmişi temizle";
 "Hang the history on the line" = "Geçmişi ipe as";
 "Pile up the history" = "Geçmişi üst üste koy";
+"Pin" = "Sabitle";
+"Unpin" = "Sabitlemeyi kaldır";
+"Search" = "Ara";

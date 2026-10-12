@@ -74,3 +74,6 @@
 "Clear history" = "清空历史记录";
 "Hang the history on the line" = "把历史记录全部挂上绳";
 "Pile up the history" = "把历史记录叠起来";
+"Pin" = "固定";
+"Unpin" = "取消固定";
+"Search" = "搜索";

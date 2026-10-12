@@ -16,6 +16,8 @@ struct PeggedView: View {
     private var copied: Bool { line.copiedID == item.id }
     private var dragging: Bool { line.draggingID == item.id }
     private var pressed: Bool { line.pressedID == item.id }
+    /// Chosen with the arrow keys.
+    private var selected: Bool { line.selectedID == item.id }
     /// Waiting on the history pile, which draws it; the card itself hides.
     private var piled: Bool { line.isPiled(item) }
     /// Hidden one way or another: it must not catch clicks meant for what
@@ -24,7 +26,7 @@ struct PeggedView: View {
 
     var body: some View {
         VStack(spacing: -12) {
-            Clothespin()
+            Clothespin(finish: item.clip)
                 .zIndex(1)
             card
         }
@@ -87,6 +89,40 @@ struct PeggedView: View {
             }
             .padding(Frame.inset)
             .glassFrame(cornerRadius: Frame.radius)
+            .overlay {
+                // The keyboard's choice, ringed in the accent colour.
+                RoundedRectangle(cornerRadius: Frame.radius, style: .continuous)
+                    .strokeBorder(Color.accentColor, lineWidth: 2.5)
+                    .padding(-3)
+                    .opacity(selected ? 1 : 0)
+                    .allowsHitTesting(false)
+            }
+            .overlay(alignment: .bottomLeading) {
+                // Copied text that kept its formatting pastes with it.
+                if item.isRich {
+                    Image(systemName: "textformat")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 18, height: 18)
+                        .glassFrame(circle: true)
+                        .padding(4)
+                        .allowsHitTesting(false)
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                // Pinned: a full line never pushes it into the history.
+                if item.pinned {
+                    Image(systemName: "pin.fill")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.primary)
+                        .rotationEffect(.degrees(30))
+                        .frame(width: 20, height: 20)
+                        .glassFrame(circle: true)
+                        .padding(3)
+                        .allowsHitTesting(false)
+                }
+            }
+            .animation(.easeOut(duration: 0.15), value: selected)
             .shadow(color: .black.opacity(hovering ? 0.26 : 0.18), radius: hovering ? 14 : 10, y: hovering ? 8 : 5)
             // Holding presses the photo in slowly, so a long press feels like
             // it is building up to something.
@@ -194,19 +230,81 @@ extension View {
 
 /// A minimal aluminium clip: a brushed metal pill with a slot where it
 /// grips the line, and a soft shadow so it reads on any background.
+/// The finish of a clothespin, which says at a glance what hangs from it.
+/// Every clip keeps the same plain shape; only its material changes.
+enum ClipFinish: Equatable {
+    /// Screenshots and other pictures.
+    case aluminium
+    /// Screen recordings, red like a recording light.
+    case rose
+    /// Copied text, in pale wood like a classic peg.
+    case birch
+    /// Web links.
+    case blue
+    /// Program code.
+    case graphite
+    /// Files and folders copied in Finder.
+    case brass
+    /// A copied colour: the clip takes the colour.
+    case tinted(NSColor)
+
+    /// Light falls on a metal clip from the left, with a bright band across
+    /// it; wood has only a soft gradient.
+    var stops: [Gradient.Stop] {
+        func metal(_ base: NSColor) -> [Gradient.Stop] {
+            [.init(color: Color(nsColor: shade(base, -0.12)), location: 0),
+             .init(color: Color(nsColor: shade(base, 0.45)), location: 0.35),
+             .init(color: Color(nsColor: shade(base, 0.12)), location: 0.65),
+             .init(color: Color(nsColor: shade(base, -0.22)), location: 1)]
+        }
+        switch self {
+        case .aluminium:
+            return [.init(color: Color(white: 0.70), location: 0), .init(color: Color(white: 0.93), location: 0.35),
+                    .init(color: Color(white: 0.82), location: 0.65), .init(color: Color(white: 0.62), location: 1)]
+        case .rose: return metal(NSColor(srgbRed: 0.86, green: 0.36, blue: 0.38, alpha: 1))
+        case .blue: return metal(NSColor(srgbRed: 0.30, green: 0.55, blue: 0.92, alpha: 1))
+        case .graphite: return metal(NSColor(srgbRed: 0.33, green: 0.35, blue: 0.39, alpha: 1))
+        case .brass: return metal(NSColor(srgbRed: 0.80, green: 0.64, blue: 0.32, alpha: 1))
+        case .tinted(let color): return metal(color.withAlphaComponent(1))
+        case .birch:
+            let wood = NSColor(srgbRed: 0.83, green: 0.70, blue: 0.52, alpha: 1)
+            return [.init(color: Color(nsColor: shade(wood, -0.08)), location: 0),
+                    .init(color: Color(nsColor: shade(wood, 0.18)), location: 0.4),
+                    .init(color: Color(nsColor: shade(wood, -0.14)), location: 1)]
+        }
+    }
+
+    /// Lighter towards white for a positive amount, darker towards black for
+    /// a negative one.
+    private func shade(_ color: NSColor, _ amount: CGFloat) -> NSColor {
+        let rgb = color.usingColorSpace(.sRGB) ?? color
+        return amount >= 0 ? rgb.blended(withFraction: amount, of: .white) ?? rgb
+                           : rgb.blended(withFraction: -amount, of: .black) ?? rgb
+    }
+}
+
+/// What a file's card hangs from.
+func clipFinish(for url: URL) -> ClipFinish {
+    if isRecording(url) { return .rose }
+    if isOtherFile(url) { return .brass }
+    guard isClippedText(url), let handle = try? FileHandle(forReadingFrom: url) else { return .aluminium }
+    defer { try? handle.close() }
+    switch classifyClip(String(decoding: (try? handle.read(upToCount: 4096)) ?? Data(), as: UTF8.self)) {
+    case .link: return .blue
+    case .color(let color, _): return .tinted(color)
+    case .code: return .graphite
+    case .plain: return .birch
+    }
+}
+
+/// A minimal clip: a metal (or wooden) pill with a slot where it grips the
+/// line, and a soft shadow so it reads on any background.
 struct Clothespin: View {
-    private let metal = LinearGradient(
-        stops: [
-            .init(color: Color(white: 0.70), location: 0),
-            .init(color: Color(white: 0.93), location: 0.35),
-            .init(color: Color(white: 0.82), location: 0.65),
-            .init(color: Color(white: 0.62), location: 1),
-        ],
-        startPoint: .leading, endPoint: .trailing)
+    var finish: ClipFinish = .aluminium
 
     var body: some View {
         RoundedRectangle(cornerRadius: 3.5, style: .continuous)
-            .fill(metal)
+            .fill(LinearGradient(stops: finish.stops, startPoint: .leading, endPoint: .trailing))
             .frame(width: 9, height: 26)
             .overlay(
                 RoundedRectangle(cornerRadius: 3.5, style: .continuous)

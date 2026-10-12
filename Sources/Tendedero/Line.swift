@@ -2,6 +2,7 @@ import AppKit
 import AVFoundation
 import Combine
 import os
+import SwiftUI
 
 let log = Logger(subsystem: "app.tendedero.Tendedero", category: "line")
 
@@ -19,6 +20,18 @@ struct Pegged: Identifiable, Equatable {
     /// Pushed off the end of a full line into the history. It still hangs,
     /// left of the rest, and is reached by scrolling.
     var archived = false
+    /// Pinned to the line: a full line never pushes it into the history,
+    /// and Take everything down leaves it.
+    var pinned = false
+    /// When the file was last changed, to notice it was edited, like text
+    /// changed in its editor, and draw the card again.
+    var modified: Date?
+    /// What history search looks in: the name, and the words of copied text.
+    var searchText = ""
+    /// Copied text that kept its formatting, as an .rtf or .html beside it.
+    var isRich = false
+    /// The clothespin it hangs from, which tells its kind at a glance.
+    var clip: ClipFinish = .aluminium
     /// A screen recording rather than a screenshot.
     var isRecording: Bool { Tendedero.isRecording(url) }
     /// Text copied to the clipboard, kept as a .txt in Tendedero's folder.
@@ -30,7 +43,7 @@ struct Pegged: Identifiable, Equatable {
 
     static func == (a: Pegged, b: Pegged) -> Bool {
         a.id == b.id && a.falling == b.falling && a.flying == b.flying && a.archived == b.archived
-            && a.thumb === b.thumb
+            && a.pinned == b.pinned && a.clip == b.clip && a.thumb === b.thumb
     }
 }
 
@@ -45,6 +58,13 @@ final class Line: ObservableObject {
     /// The history waits piled up in the space kept at the left end of the
     /// line. A click on the pile hangs all of it along the line.
     @Published private(set) var historyExpanded = false
+    /// Typed in the search tag under an expanded history: only history cards
+    /// that match hang along the line.
+    @Published var query = "" {
+        didSet { if query != oldValue && historyExpanded { showNewestHistory() } }
+    }
+    /// The search tag's entry in `hitRects`.
+    static let searchID = UUID()
     /// Resting the pointer on the pile spreads the history out once. After
     /// that, until the line tucks away, only a click does, or piling it up
     /// again would spread it right back out under the pointer.
@@ -61,6 +81,8 @@ final class Line: ObservableObject {
     @Published var copiedID: UUID?
     @Published var draggingID: UUID?
     @Published var pressedID: UUID?
+    /// The card chosen with the arrow keys, while the line has the keyboard.
+    @Published var selectedID: UUID?
     /// Whether the line has slid down into view.
     @Published var revealed = false {
         // Once the line tucks away, the history goes back on its pile.
@@ -109,11 +131,26 @@ final class Line: ObservableObject {
     var history: [URL] { items.filter { $0.archived && !$0.falling }.reversed().map(\.url) }
     var hasHistory: Bool { items.contains { $0.archived && !$0.falling } }
 
-    /// Whether a card sits hidden on the history pile rather than on the line.
-    func isPiled(_ item: Pegged) -> Bool { item.archived && !historyExpanded }
+    /// Whether a card sits hidden on the history pile rather than on the line:
+    /// all history while it is piled up, and while searching, every card the
+    /// search leaves out, so only what it found hangs.
+    func isPiled(_ item: Pegged) -> Bool {
+        if searching { return !matches(item) }
+        return item.archived && !historyExpanded
+    }
+
+    /// Typing in the search tag, which only shows while the history is out.
+    var searching: Bool { historyExpanded && !query.isEmpty }
+
+    private func matches(_ item: Pegged) -> Bool {
+        query.isEmpty || item.searchText.localizedCaseInsensitiveContains(query)
+    }
+
+    /// How many cards the search finds, on the line and in the history.
+    var matchCount: Int { items.filter { !$0.falling && matches($0) }.count }
 
     /// The cards laid out along the line: the history only once expanded.
-    private var shown: [Pegged] { historyExpanded ? items : items.filter { !$0.archived } }
+    private var shown: [Pegged] { items.filter { !isPiled($0) } }
     var shownCount: Int { shown.count }
 
     /// The newest few history cards, top of the pile first.
@@ -123,6 +160,7 @@ final class Line: ObservableObject {
 
     private let storeKey = "pegged"
     private let historyKey = "history"
+    private let pinnedKey = "pinned"
 
     /// An expanded history makes the line longer than the screen: it keeps
     /// its spacing and is moved along by scrolling, as with Keep on line.
@@ -220,25 +258,30 @@ final class Line: ObservableObject {
     @discardableResult
     func hang(_ url: URL, quietly: Bool = false, flying: Bool = false) -> UUID? {
         let item: Pegged
-        if let i = items.firstIndex(where: { $0.url == url && !$0.falling && $0.archived }) {
-            // Hung again from the history: it moves back to the newest end.
+        if let i = items.firstIndex(where: { $0.url == url && !$0.falling }) {
+            // Already hanging, or in the history: copied or hung again, it
+            // moves to the newest end instead of hanging twice.
             var again = items.remove(at: i)
             again.archived = false
             items.append(again)
             item = again
         } else {
-            guard !items.contains(where: { $0.url == url && !$0.falling }),
-                  let thumb = thumbnail(url) else { return nil }
+            guard let thumb = thumbnail(url) else { return nil }
             var new = Pegged(url: url, thumb: thumb)
             new.flying = flying
+            new.modified = modifiedDate(url)
+            new.searchText = searchKey(url)
+            new.isRich = richCompanion(of: url) != nil
+            new.clip = clipFinish(for: url)
             items.append(new)
+            indexContent(url)
             item = new
         }
         scroll = 0
         // A full line moves the oldest photo into the history. Only one: a
         // line hung on a wider screen keeps its length here instead of losing
-        // several photos to a single capture.
-        if hangingCount > maxItems, let oldest = items.first(where: { !$0.falling && !$0.archived }) {
+        // several photos to a single capture. Pinned photos stay.
+        if hangingCount > maxItems, let oldest = oldestUnpinned {
             archive(oldest.id)
         }
         save()
@@ -288,9 +331,10 @@ final class Line: ObservableObject {
     }
 
     /// "Take everything down": every photo goes the way of its corner cross.
-    /// The history stays where it is; it has its own Clear history.
+    /// The history stays where it is; it has its own Clear history. Pinned
+    /// photos stay too.
     func clear() {
-        let live = items.filter { !$0.falling && !$0.archived }
+        let live = items.filter { !$0.falling && !$0.archived && !$0.pinned }
         refillPaused = true
         takeDown(live)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.06 * Double(live.count) + 0.1) { [weak self] in
@@ -339,6 +383,20 @@ final class Line: ObservableObject {
         for item in items where !item.falling && !FileManager.default.fileExists(atPath: item.url.path) {
             drop(item.id, quietly: true)
         }
+        removeOrphanedFormatting()
+    }
+
+    /// Formatting kept beside copied text goes with it. Once the text has
+    /// left Tendedero's folder, by the Trash, Save to Desktop or a drag, the
+    /// formatting left behind goes to the Trash too.
+    private func removeOrphanedFormatting() {
+        let fm = FileManager.default
+        guard let names = try? fm.contentsOfDirectory(atPath: Inbox.folder.path) else { return }
+        for name in names where richExtensions.contains((name as NSString).pathExtension.lowercased()) {
+            let rich = Inbox.folder.appendingPathComponent(name)
+            let text = rich.deletingPathExtension().appendingPathExtension("txt")
+            if !fm.fileExists(atPath: text.path) { try? fm.trashItem(at: rich, resultingItemURL: nil) }
+        }
     }
 
     // MARK: Actions on one photo
@@ -361,6 +419,12 @@ final class Line: ObservableObject {
                 return false
             }
             entry.setString(text, forType: .string)
+            // Formatting kept from the copy pastes back as it was.
+            if let (rich, type) = richCompanion(of: url), let data = try? Data(contentsOf: rich) {
+                entry.setData(data, forType: type)
+            }
+            // A link also pastes as a link.
+            if case .link = classifyClip(text) { entry.setString(text.trimmingCharacters(in: .whitespacesAndNewlines), forType: .URL) }
         } else {
             // A recording or another file is copied as the file, which apps
             // paste as the video and Finder as the file itself.
@@ -388,6 +452,7 @@ final class Line: ObservableObject {
         guard let item = items.first(where: { $0.id == id }) else { return false }
         do {
             try FileManager.default.trashItem(at: item.url, resultingItemURL: nil)
+            if let (rich, _) = richCompanion(of: item.url) { try? FileManager.default.trashItem(at: rich, resultingItemURL: nil) }
             log.notice("Trashed \(item.url.lastPathComponent, privacy: .public)")
             if soundOn && !quietly { Line.trashSound?.play() }
             drop(id, quietly: true)
@@ -421,15 +486,56 @@ final class Line: ObservableObject {
     }
 
     /// Moves along a line that holds more than fit, from a scroll gesture.
-    func scroll(by delta: CGFloat) {
-        let next = min(mostScroll, max(0, scroll + delta))
+    /// Where the gesture has dragged the line, before its ends resist.
+    private var dragged: CGFloat?
+    private var settleWork: DispatchWorkItem?
+
+    /// Moves along a line that holds more than fit, from a scroll gesture.
+    /// Past either end the line gives a little, harder the further it goes,
+    /// like a real line pulled taut, and springs back when let go. The
+    /// momentum of a flick that runs into an end bounces off it.
+    func scroll(by delta: CGFloat, momentum: Bool = false) {
+        guard scrolling(width: width) else { return }
+        let most = mostScroll
+        let raw = (dragged ?? scroll) + delta
+        dragged = raw
+        let next = Line.resist(raw, in: 0...most)
         if next != scroll { scroll = next }
+        if momentum && (next < -24 || next > most + 24) {
+            endScroll()
+            return
+        }
+        // A mouse wheel never says its gesture ended: settle once it stops.
+        settleWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.endScroll() }
+        settleWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
+    }
+
+    /// The gesture is over: past an end, the line springs back to it.
+    func endScroll() {
+        settleWork?.cancel()
+        settleWork = nil
+        dragged = nil
+        let bounded = min(mostScroll, max(0, scroll))
+        guard bounded != scroll else { return }
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.72)) { scroll = bounded }
+    }
+
+    /// How far the line actually goes when pulled `x` past an end: less and
+    /// less, up to a limit, the way a stretched line resists.
+    nonisolated static func resist(_ x: CGFloat, in range: ClosedRange<CGFloat>) -> CGFloat {
+        let limit: CGFloat = 90
+        func pull(_ over: CGFloat) -> CGFloat { (1 - 1 / (over * 0.5 / limit + 1)) * limit }
+        if x < range.lowerBound { return range.lowerBound - pull(range.lowerBound - x) }
+        if x > range.upperBound { return range.upperBound + pull(x - range.upperBound) }
+        return x
     }
 
     /// After Keep on line is lowered, the oldest photos past it go into the
     /// history, as on a full line.
     func trim() {
-        while hangingCount > maxItems, let oldest = items.first(where: { !$0.falling && !$0.archived }) {
+        while hangingCount > maxItems, let oldest = oldestUnpinned {
             archive(oldest.id)
         }
         scroll = 0
@@ -440,7 +546,7 @@ final class Line: ObservableObject {
     /// The oldest photo on a full line joins the history. It keeps its place,
     /// which is already right of the older history and left of the rest.
     private func archive(_ id: UUID) {
-        guard let i = items.firstIndex(where: { $0.id == id }) else { return }
+        guard let i = items.firstIndex(where: { $0.id == id }), !items[i].pinned else { return }
         items[i].archived = true
         // Past the limit, the oldest entries leave for good, the way a full
         // line used to drop them.
@@ -460,11 +566,18 @@ final class Line: ObservableObject {
         historyExpanded = true
         hoverExpandSpent = true
         expandedAt = Date()
-        scroll = min(mostScroll, CGFloat(hangingCount) * row(width: width).step)
+        showNewestHistory()
+    }
+
+    /// Moves the line so the newest history hangs where the newest cards
+    /// were; while searching, so the newest of what it found is in view.
+    private func showNewestHistory() {
+        scroll = searching ? 0 : min(mostScroll, CGFloat(hangingCount) * row(width: width).step)
     }
 
     func collapseHistory() {
         historyExpanded = false
+        query = ""
         scroll = 0
     }
 
@@ -535,6 +648,87 @@ final class Line: ObservableObject {
         guard let i = items.firstIndex(where: { $0.url == url && !$0.falling }),
               let thumb = thumbnail(url) else { return }
         items[i].thumb = thumb
+        items[i].modified = modifiedDate(url)
+        items[i].searchText = searchKey(url)
+        items[i].clip = clipFinish(for: url)
+        indexContent(url)
+    }
+
+    /// Cards whose file changed since they were drawn, like copied text
+    /// edited after a long press, are drawn again. Checked as the line
+    /// comes down, which is when it would be seen.
+    func reloadEdited() {
+        for item in items where !item.falling {
+            if let date = modifiedDate(item.url), date != item.modified { reloadThumbnail(for: item.url) }
+        }
+    }
+
+    // MARK: Pinning
+
+    private var oldestUnpinned: Pegged? {
+        items.first { !$0.falling && !$0.archived && !$0.pinned }
+    }
+
+    func togglePin(_ id: UUID) {
+        guard let i = items.firstIndex(where: { $0.id == id }) else { return }
+        items[i].pinned.toggle()
+        // A pinned history card comes back up onto the line.
+        if items[i].pinned && items[i].archived { hang(items[i].url, quietly: true) }
+        // Unpinning on a line over its length lets the oldest go.
+        while hangingCount > maxItems, let oldest = oldestUnpinned { archive(oldest.id) }
+        save()
+    }
+
+    // MARK: Text
+
+    /// The card already holding exactly this text, on the line or in the
+    /// history, so copying it again moves that card instead of adding one.
+    func findText(_ text: String) -> URL? {
+        let data = Data(text.utf8)
+        for item in items.reversed() where !item.falling && item.isText {
+            let size = (try? item.url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1
+            guard size == data.count, (try? Data(contentsOf: item.url)) == data else { continue }
+            return item.url
+        }
+        return nil
+    }
+
+    // MARK: Keyboard
+
+    /// The cards the arrow keys move between: those laid out on the line.
+    private var selectable: [Pegged] { items.filter { !$0.falling && !isPiled($0) } }
+
+    /// Taking the keyboard selects the newest card.
+    func selectNewest() {
+        selectedID = items.last { !$0.falling && !$0.archived }?.id
+        reveal(selected: selectedID)
+    }
+
+    func moveSelection(by step: Int) {
+        let cards = selectable
+        guard !cards.isEmpty else { return }
+        let i = cards.firstIndex { $0.id == selectedID } ?? cards.count - 1
+        let next = cards[min(max(i + step, 0), cards.count - 1)]
+        selectedID = next.id
+        reveal(selected: next.id)
+    }
+
+    /// The Nth newest card on the line, for ⌘1 to ⌘9.
+    func newest(_ n: Int) -> Pegged? {
+        let current = items.filter { !$0.falling && !$0.archived }
+        return n >= 1 && n <= current.count ? current[current.count - n] : nil
+    }
+
+    /// Scrolls just enough to bring the selected card fully into view.
+    private func reveal(selected id: UUID?) {
+        guard let id, let index = items.firstIndex(where: { $0.id == id }) else { return }
+        let x = x(of: index, width: width)
+        let margin = Layout.spacing
+        if opacity(at: x, width: width) < 1 || x < margin || x > width - margin {
+            // Moving the line right brings older cards in, and the other way.
+            let next = min(mostScroll, max(0, scroll + width / 2 - x))
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { scroll = next }
+        }
     }
 
     /// Quick Look on this photo, with the rest of the line a key press away.
@@ -574,6 +768,8 @@ final class Line: ObservableObject {
         let paths = items.filter { !$0.falling && !$0.archived }.map(\.url.path)
         UserDefaults.standard.set(paths, forKey: storeKey)
         UserDefaults.standard.set(history.map(\.path), forKey: historyKey)
+        UserDefaults.standard.set(items.filter { $0.pinned && !$0.falling }.map(\.url.path), forKey: pinnedKey)
+        SearchIndex.shared.keep(only: Set(items.filter { !$0.falling }.map(\.url.path)))
     }
 
     /// Everything comes back as it was. This runs before the line knows its
@@ -583,6 +779,7 @@ final class Line: ObservableObject {
         // The history is kept newest first and hangs oldest first. Anything
         // also on the line proper hangs there instead.
         let paths = UserDefaults.standard.stringArray(forKey: storeKey) ?? []
+        let pinned = Set(UserDefaults.standard.stringArray(forKey: pinnedKey) ?? [])
         let history = (UserDefaults.standard.stringArray(forKey: historyKey) ?? [])
             .filter { !paths.contains($0) }.reversed()
         for (path, archived) in history.map({ ($0, true) }) + paths.map({ ($0, false) })
@@ -591,11 +788,43 @@ final class Line: ObservableObject {
             guard !items.contains(where: { $0.url == url }), let thumb = thumbnail(url) else { continue }
             var item = Pegged(url: url, thumb: thumb)
             item.archived = archived
+            item.pinned = pinned.contains(path) && !archived
+            item.modified = modifiedDate(url)
+            item.searchText = searchKey(url)
+            item.isRich = richCompanion(of: url) != nil
+            item.clip = clipFinish(for: url)
             items.append(item)
+            indexContent(url)
         }
+        removeOrphanedFormatting()
     }
 
     // MARK: Helpers
+
+    /// Adds the words inside a picture or file to what search looks in, once
+    /// they have been read in the background. Copied text has its own.
+    private func indexContent(_ url: URL) {
+        guard !isClippedText(url) else { return }
+        SearchIndex.shared.text(for: url, modified: modifiedDate(url)) { [weak self] text in
+            guard let self else { return }
+            let key = self.searchKey(url) + " " + text
+            for i in self.items.indices where self.items[i].url == url { self.items[i].searchText = key }
+        }
+    }
+
+    /// The name, and for copied text its first words, for search.
+    private func searchKey(_ url: URL) -> String {
+        var key = FileManager.default.displayName(atPath: url.path)
+        if isClippedText(url), let handle = try? FileHandle(forReadingFrom: url) {
+            key += " " + String(decoding: (try? handle.read(upToCount: 8192)) ?? Data(), as: UTF8.self)
+            try? handle.close()
+        }
+        return key
+    }
+
+    private func modifiedDate(_ url: URL) -> Date? {
+        try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+    }
 
     /// A file's card first shows its icon. When Quick Look has a real preview,
     /// like the first page of a PDF, the card is drawn again with it.
