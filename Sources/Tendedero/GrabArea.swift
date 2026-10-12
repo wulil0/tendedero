@@ -13,6 +13,9 @@ import SwiftUI
 struct GrabArea: NSViewRepresentable {
     let item: Pegged
     let line: Line
+    /// Waiting on the history pile: the card is hidden under the pile and
+    /// must not catch the clicks meant for it.
+    let piled: Bool
 
     func makeNSView(context: Context) -> GrabView {
         let view = GrabView()
@@ -27,12 +30,20 @@ struct GrabArea: NSViewRepresentable {
     private func configure(_ view: GrabView) {
         let id = item.id
         let line = line
-        let isRecording = item.isRecording
+        let isPicture = item.isPicture
+        let archived = item.archived
+        let url = item.url
         view.url = item.url
+        view.passive = piled
+        // The history pile is drawn over the cards that scroll under it.
+        view.isCovered = { point in line.hitRects[Line.historyID]?.contains(point) ?? false }
         view.dragImage = item.thumb
         view.onClick = { line.copy(id) }
         view.onDoubleClick = { line.open(id) }
-        view.onDragStart = { line.draggingID = id }
+        view.onDragStart = {
+            HoverPreview.shared.hide()
+            line.draggingID = id
+        }
         view.onDragEnd = {
             line.draggingID = nil
             // Moved into a folder: it is saved where you wanted it.
@@ -42,15 +53,23 @@ struct GrabArea: NSViewRepresentable {
         view.onDiscard = { line.discard(id) }
         view.onLongPress = { line.markup(id) }
         view.onForceClick = { line.quickLook(id) }
-        view.onPressChange = { pressed in line.pressedID = pressed ? id : nil }
+        view.onPressChange = { pressed in
+            if pressed { HoverPreview.shared.hide() }
+            line.pressedID = pressed ? id : nil
+        }
         view.menuProvider = {
             let menu = NSMenu()
             // Items say themselves whether they can be used.
             menu.autoenablesItems = false
             menu.addItem(ClosureMenuItem(L("Copy")) { line.copy(id) })
+            if archived {
+                menu.addItem(ClosureMenuItem(L("Hang on the line again")) { line.hangAgain(url) })
+            }
             menu.addItem(ClosureMenuItem(L("Open")) { line.open(id) })
             menu.addItem(ClosureMenuItem(L("Quick Look")) { line.quickLook(id) })
-            if !isRecording {
+            // A long press on anything else is not Markup: recordings trim,
+            // text opens in its editor and files in Quick Look.
+            if isPicture {
                 menu.addItem(ClosureMenuItem(L("Markup")) { line.markup(id) })
             }
             menu.addItem(ClosureMenuItem(L("Show in Finder")) { line.reveal(id) })
@@ -83,6 +102,12 @@ final class GrabView: NSView, NSDraggingSource {
 
     var url: URL?
     var dragImage: NSImage?
+    /// Takes no mouse at all. SwiftUI's allowsHitTesting does not reach an
+    /// AppKit view, so a hidden card says so here.
+    var passive = false
+    /// Whether something drawn over the card, like the history pile, takes
+    /// a point given in the line's top-left window coordinates.
+    var isCovered: (CGPoint) -> Bool = { _ in false }
     var onClick: () -> Void = {}
     var onDoubleClick: () -> Void = {}
     var onDragStart: () -> Void = {}
@@ -104,6 +129,16 @@ final class GrabView: NSView, NSDraggingSource {
     private static let holdDuration: TimeInterval = 0.45
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        if passive { return nil }
+        if let superview, let content = window?.contentView {
+            let p = superview.convert(point, to: content)
+            let top = content.isFlipped ? p : CGPoint(x: p.x, y: content.bounds.height - p.y)
+            if isCovered(top) { return nil }
+        }
+        return super.hitTest(point)
+    }
 
     /// The discard cross drawn in the top left corner of the card. It is
     /// handled here because this view sits on top of the SwiftUI card.

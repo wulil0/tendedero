@@ -88,9 +88,17 @@ PLIST
 # set), with the hardened runtime and a secure timestamp that notarization
 # requires. Without one, sign ad hoc so the app still runs locally.
 IDENTITY="${SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/Developer ID Application/{print $2; exit}')}"
+# A self-signed "Tendedero Local" certificate, for builds that stay on this
+# Mac. Ad hoc signing changes the app's identity at every build, so macOS
+# asks again for folder access each time; a fixed certificate keeps the
+# answer. It is not trusted, so it is looked up without -v.
+LOCAL_IDENTITY="Tendedero Local"
 if [ -n "$IDENTITY" ]; then
   codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP"
   echo "Signed with $IDENTITY"
+elif security find-identity -p codesigning 2>/dev/null | grep -q "\"$LOCAL_IDENTITY\""; then
+  codesign --force --deep --sign "$LOCAL_IDENTITY" "$APP"
+  echo "Signed with $LOCAL_IDENTITY"
 else
   codesign --force --deep --sign - "$APP" >/dev/null
   echo "Signed ad hoc (no Developer ID found)"

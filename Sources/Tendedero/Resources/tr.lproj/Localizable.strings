@@ -42,7 +42,11 @@
 "Over full screen apps" = "Tam ekran uygulamaların üzerinde";
 "Hang copied images" = "Kopyalanan görselleri as";
 "Images you copy hang on the line too" = "Kopyaladığınız görseller de ipe asılır";
-"Tendedero, hanging copied images" = "Tendedero, kopyalanan görselleri asıyor";
+"Hang copied text" = "Kopyalanan metni as";
+"Text you copy hangs on the line too" = "Kopyaladığınız metin de ipe asılır";
+"Hang copied files" = "Kopyalanan dosyaları as";
+"Files you copy in Finder hang on the line too" = "Finder’da kopyaladığınız dosyalar da ipe asılır";
+"Tendedero, hanging what you copy" = "Tendedero, kopyaladıklarınızı asıyor";
 
 /* GrabArea */
 "Copy" = "Kopyala";
@@ -62,3 +66,11 @@
 
 /* PeggedView */
 "Copied" = "Kopyalandı";
+
+/* History */
+"History" = "Geçmiş";
+"Hang on the line again" = "Yeniden ipe as";
+"Remove from history" = "Geçmişten kaldır";
+"Clear history" = "Geçmişi temizle";
+"Hang the history on the line" = "Geçmişi ipe as";
+"Pile up the history" = "Geçmişi üst üste koy";

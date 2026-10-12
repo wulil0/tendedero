@@ -5,6 +5,9 @@ import SwiftUI
 struct PeggedView: View {
     let item: Pegged
     @ObservedObject var line: Line
+    /// Scrolled under the history pile or into the empty place at the other
+    /// end, and faded out there.
+    var faded = false
 
     @State private var swing: Double = 0
     @State private var arrived = false
@@ -13,6 +16,11 @@ struct PeggedView: View {
     private var copied: Bool { line.copiedID == item.id }
     private var dragging: Bool { line.draggingID == item.id }
     private var pressed: Bool { line.pressedID == item.id }
+    /// Waiting on the history pile, which draws it; the card itself hides.
+    private var piled: Bool { line.isPiled(item) }
+    /// Hidden one way or another: it must not catch clicks meant for what
+    /// is drawn over it, like the history pile.
+    private var unreachable: Bool { piled || faded }
 
     var body: some View {
         VStack(spacing: -12) {
@@ -24,7 +32,8 @@ struct PeggedView: View {
         .offset(y: arrived ? 0 : -46)
         // The fall itself is drawn over the whole screen by CaptureFlight, so
         // the card here just steps aside at once.
-        .opacity(item.falling || item.flying ? 0 : (arrived ? 1 : 0))
+        .opacity(item.falling || item.flying || piled ? 0 : (arrived ? 1 : 0))
+        .allowsHitTesting(!unreachable)
         .transaction { t in if item.falling { t.animation = nil } }
         .animation(.easeOut(duration: 0.16), value: item.flying)
         .onAppear(perform: arrive)
@@ -84,6 +93,9 @@ struct PeggedView: View {
             .scaleEffect(pressed ? 0.95 : (hovering ? 1.035 : 1), anchor: .top)
             .animation(pressed ? .easeInOut(duration: 0.45) : .spring(response: 0.3, dampingFraction: 0.6), value: pressed)
             .opacity(dragging ? 0.45 : 1)
+            // History cards hang a little faded, until the pointer is on one.
+            .saturation(item.archived && !hovering ? 0.6 : 1)
+            .opacity(item.archived && !hovering ? 0.88 : 1)
             .overlay(alignment: .topLeading) {
                 // Drawn here, clicked through GrabView, which sits on top. A
                 // cross sends a file in Tendedero's folder to the Trash; for a
@@ -98,7 +110,7 @@ struct PeggedView: View {
                     .scaleEffect(hovering ? 1 : 0.6)
                     .allowsHitTesting(false)
             }
-            .overlay(GrabArea(item: item, line: line))
+            .overlay(GrabArea(item: item, line: line, piled: unreachable))
             .overlay(alignment: .bottom) {
                 if copied {
                     Label(L("Copied"), systemImage: "checkmark")
@@ -113,11 +125,14 @@ struct PeggedView: View {
             }
             .animation(.easeOut(duration: 0.18), value: hovering)
             .animation(.easeOut(duration: 0.2), value: copied)
-            .onHover { hovering = $0 }
+            .onHover { on in
+                hovering = on
+                line.hover(item.id, on)
+            }
             .background(
                 GeometryReader { g in
                     Color.clear.preference(key: HitRectsKey.self,
-                                           value: item.falling ? [:] : [item.id: g.frame(in: .global)])
+                                           value: item.falling || unreachable ? [:] : [item.id: g.frame(in: .global)])
                 }
             )
     }

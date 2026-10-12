@@ -42,7 +42,11 @@
 "Over full screen apps" = "Sobre apps a pantalla completa";
 "Hang copied images" = "Pendurar imaxes copiadas";
 "Images you copy hang on the line too" = "As imaxes que copias tamén se penduran";
-"Tendedero, hanging copied images" = "Tendedero, pendurando imaxes copiadas";
+"Hang copied text" = "Pendurar texto copiado";
+"Text you copy hangs on the line too" = "O texto que copias tamén se pendura";
+"Hang copied files" = "Pendurar ficheiros copiados";
+"Files you copy in Finder hang on the line too" = "Os ficheiros que copias no Finder tamén se penduran";
+"Tendedero, hanging what you copy" = "Tendedero, pendurando o que copias";
 
 /* GrabArea */
 "Copy" = "Copiar";
@@ -62,3 +66,11 @@
 
 /* PeggedView */
 "Copied" = "Copiado";
+
+/* History */
+"History" = "Historial";
+"Hang on the line again" = "Volver pendurar na corda";
+"Remove from history" = "Quitar do historial";
+"Clear history" = "Borrar o historial";
+"Hang the history on the line" = "Pendurar o historial na corda";
+"Pile up the history" = "Amorear o historial";

@@ -42,7 +42,11 @@
 "Over full screen apps" = "フルスクリーンのアプリの上にも";
 "Hang copied images" = "コピーした画像を吊るす";
 "Images you copy hang on the line too" = "コピーした画像もロープに吊るされます";
-"Tendedero, hanging copied images" = "Tendedero、コピーした画像を吊るしています";
+"Hang copied text" = "コピーしたテキストを吊るす";
+"Text you copy hangs on the line too" = "コピーしたテキストもロープに吊るされます";
+"Hang copied files" = "コピーしたファイルを吊るす";
+"Files you copy in Finder hang on the line too" = "Finderでコピーしたファイルもロープに吊るされます";
+"Tendedero, hanging what you copy" = "Tendedero、コピーしたものを吊るしています";
 
 /* GrabArea */
 "Copy" = "コピー";
@@ -62,3 +66,11 @@
 
 /* PeggedView */
 "Copied" = "コピーしました";
+
+/* History */
+"History" = "履歴";
+"Hang on the line again" = "もう一度ロープに吊るす";
+"Remove from history" = "履歴から削除";
+"Clear history" = "履歴を消去";
+"Hang the history on the line" = "履歴をロープに吊るす";
+"Pile up the history" = "履歴を重ねる";

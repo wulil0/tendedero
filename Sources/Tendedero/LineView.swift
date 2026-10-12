@@ -38,12 +38,14 @@ enum Layout {
     }
 
     /// Photos hang `spacing` apart, centred. When there are more than the
-    /// `visible` that fit: with Keep on line set, they keep their spacing,
+    /// `visible` that fit: with Keep on line set or history on the line
+    /// (`scrolls`), they keep their spacing,
     /// the newest stays where the last one would hang on a full line, and
     /// `scroll` brings older ones in from the left. Otherwise (a line hung
     /// on a wider screen) they move closer together so none is past the edge.
-    static func x(index: Int, count: Int, width: CGFloat, visible: Int, scroll: CGFloat) -> CGFloat {
-        if Line.keepOnLine != nil && count > visible {
+    static func x(index: Int, count: Int, width: CGFloat, visible: Int, scroll: CGFloat,
+                  scrolls: Bool) -> CGFloat {
+        if scrolls && count > visible {
             let newest = width / 2 + CGFloat(visible - 1) * spacing / 2
             return newest - CGFloat(count - 1 - index) * spacing + scroll
         }
@@ -69,18 +71,32 @@ struct LineView: View {
                 }
 
                 ForEach(Array(line.items.enumerated()), id: \.element.id) { index, item in
-                    let x = Layout.x(index: index, count: line.items.count, width: width,
-                                     visible: line.visibleCount, scroll: line.scroll)
+                    let x = line.x(of: index, width: width)
                     let ropeY = Layout.ropeY(x: x, width: width)
-                    PeggedView(item: item, line: line)
+                    let alpha = line.isPiled(item) ? 1 : line.opacity(at: x, width: width)
+                    PeggedView(item: item, line: line, faded: alpha < 0.35)
                         .frame(width: Layout.cardWidth, height: Layout.panelHeight - ropeY, alignment: .top)
-                        // Photos scrolled towards an edge fade out before they reach it.
-                        .opacity(min(1, max(0, min(x, width - x) / 90)))
+                        // Photos scrolled towards an edge, or towards the history
+                        // pile, fade out before they reach it.
+                        .opacity(alpha)
                         .position(x: x, y: ropeY - Layout.pinAbove + (Layout.panelHeight - ropeY) / 2)
+                }
+
+                if line.hasHistory {
+                    let x = line.pileX(width: width)
+                    let ropeY = Layout.ropeY(x: x, width: width)
+                    HistoryPile(line: line)
+                        .frame(width: Layout.cardWidth, height: Layout.panelHeight - ropeY, alignment: .top)
+                        .position(x: x, y: ropeY - Layout.pinAbove + (Layout.panelHeight - ropeY) / 2)
+                        .transition(.opacity)
                 }
             }
             .animation(.spring(response: 0.55, dampingFraction: 0.78), value: line.items.map(\.id))
             .animation(.easeInOut(duration: 0.3), value: line.items.isEmpty)
+            // Cards slide onto the pile and back out along the line.
+            .animation(.spring(response: 0.55, dampingFraction: 0.82), value: line.items.map(\.archived))
+            .animation(.spring(response: 0.55, dampingFraction: 0.82), value: line.historyExpanded)
+            .animation(.spring(response: 0.55, dampingFraction: 0.78), value: line.hasHistory)
             // Tucked away, the whole line waits above the top edge and slides
             // out from under the menu bar, the way an auto-hiding Dock does.
             .offset(y: line.revealed ? 0 : -(Layout.panelHeight + 12))

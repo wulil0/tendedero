@@ -74,7 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         restoreSettingsOnTermination()
         startWatcher()
         clipboardWatcher = ClipboardWatcher { [weak self] url in self?.hangCapture(url) }
-        if ClipboardWatcher.isEnabled { clipboardWatcher.start() }
+        if ClipboardWatcher.isWatching { clipboardWatcher.start() }
 
         registerShortcut()
 
@@ -89,7 +89,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 ? event.scrollingDeltaX : event.scrollingDeltaY
             self?.line.scroll(by: event.hasPreciseScrollingDeltas ? delta : delta * 12)
         }
-        line.onFall = { [weak self] item in self?.fall(item) }
+        line.onFall = { [weak self] item in
+            HoverPreview.shared.hide()
+            self?.fall(item)
+        }
+        line.onHover = { [weak self] item in self?.preview(item) }
 
         line.$items
             .receive(on: RunLoop.main)
@@ -229,10 +233,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if alert.runModal() == .alertFirstButtonReturn { setInbox(true) }
     }
 
-    /// Watching the clipboard is opt in, from the menu bar only.
-    private func setClipboard(_ on: Bool) {
-        ClipboardWatcher.isEnabled = on
-        if on { clipboardWatcher.start() } else { clipboardWatcher.stop() }
+    /// Watching the clipboard is opt in, from the menu bar only, for images,
+    /// text and files each.
+    private func clipboardChanged() {
+        if ClipboardWatcher.isWatching { clipboardWatcher.start() } else { clipboardWatcher.stop() }
         updateStatusIcon()
     }
 
@@ -318,6 +322,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    /// Resting on a card shows it larger, below the line.
+    private func preview(_ item: Pegged?) {
+        guard let item, isRevealed, !GrabView.isDragging, line.pressedID == nil,
+              !line.isPiled(item), let screen = panel.screen,
+              let card = cardFrame(for: item.id) else {
+            HoverPreview.shared.hide()
+            return
+        }
+        HoverPreview.shared.show(item.url, below: card, on: screen)
+    }
+
     /// A discarded card falls over the whole screen, from where it hangs.
     private func fall(_ item: Pegged) {
         guard isPresent, isRevealed, !item.flying, let screen = panel.screen,
@@ -331,8 +346,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func cardFrame(for id: UUID) -> CGRect? {
         guard let index = line.items.firstIndex(where: { $0.id == id }) else { return nil }
         let width = panel.frame.width
-        let x = Layout.x(index: index, count: line.items.count, width: width,
-                         visible: line.visibleCount, scroll: line.scroll)
+        let x = line.x(of: index, width: width)
         let viewTop = Layout.ropeY(x: x, width: width) - Layout.pinAbove
         let cardTop = viewTop + PeggedView.cardOffsetBelowTop
         let size = PeggedView.cardSize(for: line.items[index].thumb.size)
@@ -386,6 +400,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard on != isRevealed else { return }
         isRevealed = on
         line.revealed = on
+        if !on { HoverPreview.shared.hide() }
         // It always comes down showing the newest.
         if on { line.scroll = 0 }
         // Tucked away, the line leaves no window behind: an invisible strip
@@ -541,7 +556,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         var overPhoto = line.hitRects.values.contains { $0.insetBy(dx: -4, dy: -4).contains(flipped) }
         // A line longer than the screen also takes the band the photos hang
         // in, gaps included, so a swipe anywhere along it moves it.
-        if !overPhoto, line.items.count > line.visibleCount, Line.keepOnLine != nil {
+        if !overPhoto, line.isScrolling {
             let band = line.hitRects.values.reduce(CGRect.null) { $0.union($1) }
             overPhoto = !band.isNull && flipped.y >= band.minY - 4 && flipped.y <= band.maxY + 4
         }
@@ -597,7 +612,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let usable = panel.frame.width - 200
         let fits = max(3, min(12, Int(usable / Layout.spacing)))
         line.visibleCount = fits
-        line.maxItems = max(fits, Line.keepOnLine ?? fits)
+        line.width = panel.frame.width
+        // One place is kept for the history pile.
+        line.maxItems = max(fits - 1, Line.keepOnLine ?? fits - 1)
     }
 
     // MARK: Menu bar
@@ -613,11 +630,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem.menu = menu
     }
 
-    /// The shirt fills in while copied images are hung, so it shows at a
+    /// The shirt fills in while what you copy is hung, so it shows at a
     /// glance that the clipboard is being watched.
     private func updateStatusIcon() {
-        let on = ClipboardWatcher.isEnabled
-        let description = on ? L("Tendedero, hanging copied images") : "Tendedero"
+        let on = ClipboardWatcher.isWatching
+        let description = on ? L("Tendedero, hanging what you copy") : "Tendedero"
         let image = NSImage(systemSymbolName: on ? "tshirt.fill" : "tshirt", accessibilityDescription: description)
         image?.isTemplate = true
         statusItem.button?.image = image
@@ -642,6 +659,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         clearItem.isEnabled = line.liveCount > 0
         menu.addItem(clearItem)
 
+        // What a full line pushed off, within reach even with the line empty.
+        let historyItem = NSMenuItem(title: L("History"), action: nil, keyEquivalent: "")
+        historyItem.submenu = HistoryMenu.make(for: line)
+        historyItem.isEnabled = !line.history.isEmpty
+        menu.addItem(historyItem)
+
         let inbox = ClosureMenuItem(L("Handle screenshots")) { [weak self] in
             self?.setInbox(!Inbox.isEnabled)
         }
@@ -650,11 +673,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(inbox)
 
         let clipboard = ClosureMenuItem(L("Hang copied images")) { [weak self] in
-            self?.setClipboard(!ClipboardWatcher.isEnabled)
+            ClipboardWatcher.isEnabled.toggle()
+            self?.clipboardChanged()
         }
         clipboard.state = ClipboardWatcher.isEnabled ? .on : .off
         clipboard.toolTip = L("Images you copy hang on the line too")
         menu.addItem(clipboard)
+
+        let clipboardText = ClosureMenuItem(L("Hang copied text")) { [weak self] in
+            ClipboardWatcher.textEnabled.toggle()
+            self?.clipboardChanged()
+        }
+        clipboardText.state = ClipboardWatcher.textEnabled ? .on : .off
+        clipboardText.toolTip = L("Text you copy hangs on the line too")
+        menu.addItem(clipboardText)
+
+        let clipboardFiles = ClosureMenuItem(L("Hang copied files")) { [weak self] in
+            ClipboardWatcher.filesEnabled.toggle()
+            self?.clipboardChanged()
+        }
+        clipboardFiles.state = ClipboardWatcher.filesEnabled ? .on : .off
+        clipboardFiles.toolTip = L("Files you copy in Finder hang on the line too")
+        menu.addItem(clipboardFiles)
 
         let bringDown = NSMenuItem(title: L("Bring the line down"), action: nil, keyEquivalent: "")
         let options = NSMenu()
