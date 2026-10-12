@@ -77,3 +77,7 @@
 "Pin" = "고정";
 "Unpin" = "고정 해제";
 "Search" = "검색";
+"Appearance" = "화면 모드";
+"Match System" = "시스템 설정에 따름";
+"Light" = "라이트";
+"Dark" = "다크";

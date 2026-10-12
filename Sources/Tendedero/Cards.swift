@@ -43,6 +43,38 @@ private func drawCard(width: Int, draw: (CGRect) -> Void) -> NSImage? {
     return NSImage(cgImage: image, size: NSSize(width: w, height: h))
 }
 
+// MARK: Light and dark
+
+/// Whether cards are drawn for a dark appearance. The app sets it as the
+/// system switches between light and dark, then draws every card again.
+nonisolated(unsafe) var cardsAreDark = false
+
+/// The colours cards are drawn in, as paper by day and as dark paper at
+/// night, so a sheet of text does not glare on a dark screen.
+private struct Palette {
+    let paper: NSColor, ink: NSColor, faint: NSColor, accent: NSColor
+    let codePaper: NSColor, codeInk: NSColor, filePaper: NSColor, fileInk: NSColor
+    let checkerLight: CGFloat, checkerDark: CGFloat
+
+    static var current: Palette { cardsAreDark ? dark : light }
+
+    static let light = Palette(
+        paper: NSColor(white: 0.985, alpha: 1), ink: NSColor(white: 0.13, alpha: 1),
+        faint: NSColor(white: 0.45, alpha: 1), accent: NSColor(srgbRed: 0.18, green: 0.47, blue: 0.95, alpha: 1),
+        codePaper: NSColor(srgbRed: 0.955, green: 0.962, blue: 0.972, alpha: 1),
+        codeInk: NSColor(srgbRed: 0.16, green: 0.2, blue: 0.27, alpha: 1),
+        filePaper: NSColor(white: 0.95, alpha: 1), fileInk: NSColor(white: 0.2, alpha: 1),
+        checkerLight: 0.96, checkerDark: 0.86)
+
+    static let dark = Palette(
+        paper: NSColor(white: 0.17, alpha: 1), ink: NSColor(white: 0.9, alpha: 1),
+        faint: NSColor(white: 0.6, alpha: 1), accent: NSColor(srgbRed: 0.42, green: 0.64, blue: 1, alpha: 1),
+        codePaper: NSColor(srgbRed: 0.11, green: 0.12, blue: 0.14, alpha: 1),
+        codeInk: NSColor(srgbRed: 0.8, green: 0.85, blue: 0.92, alpha: 1),
+        filePaper: NSColor(white: 0.2, alpha: 1), fileInk: NSColor(white: 0.86, alpha: 1),
+        checkerLight: 0.32, checkerDark: 0.24)
+}
+
 // MARK: Copied text
 
 /// What a piece of copied text is, for how its card shows it.
@@ -138,13 +170,13 @@ func textCard(_ url: URL, maxPixels: Int) -> NSImage? {
         case .code:
             drawCode(text, in: rect, pad: pad)
         case .plain:
-            NSColor(white: 0.985, alpha: 1).setFill()
+            Palette.current.paper.setFill()
             rect.fill()
             let style = NSMutableParagraphStyle()
             style.lineBreakMode = .byWordWrapping
             NSAttributedString(string: text, attributes: [
                 .font: NSFont.systemFont(ofSize: rect.width * 0.068),
-                .foregroundColor: NSColor(white: 0.13, alpha: 1),
+                .foregroundColor: Palette.current.ink,
                 .paragraphStyle: style,
             ]).draw(with: rect.insetBy(dx: pad, dy: pad),
                     options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
@@ -153,9 +185,10 @@ func textCard(_ url: URL, maxPixels: Int) -> NSImage? {
 }
 
 private func drawLink(_ link: URL, in rect: CGRect, pad: CGFloat) {
-    NSColor(white: 0.985, alpha: 1).setFill()
+    let palette = Palette.current
+    palette.paper.setFill()
     rect.fill()
-    let accent = NSColor(srgbRed: 0.18, green: 0.47, blue: 0.95, alpha: 1)
+    let accent = palette.accent
     // A small link mark, then the site, then the rest of the address.
     let mark = rect.width * 0.075
     if let symbol = NSImage(systemSymbolName: "link", accessibilityDescription: nil)?
@@ -170,7 +203,7 @@ private func drawLink(_ link: URL, in rect: CGRect, pad: CGFloat) {
     let siteHeight = rect.width * 0.11
     NSAttributedString(string: host, attributes: [
         .font: NSFont.systemFont(ofSize: rect.width * 0.085, weight: .semibold),
-        .foregroundColor: NSColor(white: 0.1, alpha: 1),
+        .foregroundColor: palette.ink,
         .paragraphStyle: site,
     ]).draw(with: CGRect(x: rect.minX + pad, y: siteTop - siteHeight, width: rect.width - pad * 2, height: siteHeight),
             options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
@@ -181,7 +214,7 @@ private func drawLink(_ link: URL, in rect: CGRect, pad: CGFloat) {
     wrap.lineBreakMode = .byCharWrapping
     NSAttributedString(string: rest, attributes: [
         .font: NSFont.systemFont(ofSize: rect.width * 0.055),
-        .foregroundColor: NSColor(white: 0.45, alpha: 1),
+        .foregroundColor: palette.faint,
         .paragraphStyle: wrap,
     ]).draw(with: CGRect(x: rect.minX + pad, y: rect.minY + pad, width: rect.width - pad * 2,
                          height: siteTop - siteHeight - rect.width * 0.02 - rect.minY - pad),
@@ -194,7 +227,9 @@ private func drawColor(_ color: NSColor, code: String, in rect: CGRect, pad: CGF
         let square = rect.width / 16
         for row in 0..<Int(ceil(rect.height / square)) {
             for column in 0..<16 {
-                NSColor(white: (row + column).isMultiple(of: 2) ? 0.96 : 0.86, alpha: 1).setFill()
+                let palette = Palette.current
+                NSColor(white: (row + column).isMultiple(of: 2) ? palette.checkerLight : palette.checkerDark,
+                        alpha: 1).setFill()
                 CGRect(x: rect.minX + CGFloat(column) * square, y: rect.minY + CGFloat(row) * square,
                        width: square, height: square).fill()
             }
@@ -219,7 +254,7 @@ private func drawColor(_ color: NSColor, code: String, in rect: CGRect, pad: CGF
 }
 
 private func drawCode(_ text: String, in rect: CGRect, pad: CGFloat) {
-    NSColor(srgbRed: 0.955, green: 0.962, blue: 0.972, alpha: 1).setFill()
+    Palette.current.codePaper.setFill()
     rect.fill()
     let style = NSMutableParagraphStyle()
     // Long lines run off the edge rather than wrap, as in an editor.
@@ -229,7 +264,7 @@ private func drawCode(_ text: String, in rect: CGRect, pad: CGFloat) {
         .map { $0.replacingOccurrences(of: "\t", with: "    ") }
     NSAttributedString(string: lines.joined(separator: "\n"), attributes: [
         .font: NSFont.monospacedSystemFont(ofSize: rect.width * 0.05, weight: .regular),
-        .foregroundColor: NSColor(srgbRed: 0.16, green: 0.2, blue: 0.27, alpha: 1),
+        .foregroundColor: Palette.current.codeInk,
         .paragraphStyle: style,
     ]).draw(with: rect.insetBy(dx: pad * 0.8, dy: pad * 0.8), options: [.usesLineFragmentOrigin])
 }
@@ -259,7 +294,7 @@ func fileCard(_ url: URL, preview: NSImage? = nil, maxPixels: Int) -> NSImage? {
     let icon = preview ?? NSWorkspace.shared.icon(forFile: url.path)
     let name = FileManager.default.displayName(atPath: url.path)
     return drawCard(width: maxPixels) { rect in
-        NSColor(white: 0.95, alpha: 1).setFill()
+        Palette.current.filePaper.setFill()
         rect.fill()
         let pad = rect.width * 0.06
         let nameHeight = rect.width * 0.11
@@ -277,7 +312,7 @@ func fileCard(_ url: URL, preview: NSImage? = nil, maxPixels: Int) -> NSImage? {
         style.lineBreakMode = .byTruncatingMiddle
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: rect.width * 0.062, weight: .medium),
-            .foregroundColor: NSColor(white: 0.2, alpha: 1),
+            .foregroundColor: Palette.current.fileInk,
             .paragraphStyle: style,
         ]
         NSAttributedString(string: name, attributes: attributes).draw(

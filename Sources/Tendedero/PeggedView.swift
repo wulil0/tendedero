@@ -9,6 +9,7 @@ struct PeggedView: View {
     /// end, and faded out there.
     var faded = false
 
+    @Environment(\.colorScheme) private var colorScheme
     @State private var swing: Double = 0
     @State private var arrived = false
     @State private var hovering = false
@@ -64,11 +65,17 @@ struct PeggedView: View {
 
     private var photoSize: CGSize { Self.photoSize(for: item.thumb.size) }
 
+    /// In the dark, screenshots and recordings sit under a dark veil so a
+    /// bright capture does not glare; resting the pointer on one lifts it.
+    private var veiled: Bool { colorScheme == .dark && (item.isPicture || item.isRecording) && !hovering }
+
     private var card: some View {
         Image(nsImage: item.thumb)
             .resizable()
             .interpolation(.high)
             .frame(width: photoSize.width, height: photoSize.height)
+            .overlay(Color.black.opacity(veiled ? 0.28 : 0))
+            .animation(.easeOut(duration: 0.2), value: veiled)
             // Concentric corners: the photo's radius is the frame's minus the
             // inset, the way macOS rounds nested shapes.
             .clipShape(RoundedRectangle(cornerRadius: Frame.radius - Frame.inset, style: .continuous))

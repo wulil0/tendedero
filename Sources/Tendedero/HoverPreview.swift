@@ -10,7 +10,7 @@ final class HoverPreview {
     static let shared = HoverPreview()
 
     private let panel: NSPanel
-    private let host = NSHostingView(rootView: PreviewCard(image: nil, shown: false))
+    private let host = NSHostingView(rootView: PreviewCard(image: nil, veiled: false, shown: false))
     private var pending: DispatchWorkItem?
     private var showing: URL?
 
@@ -50,7 +50,7 @@ final class HoverPreview {
         pending = nil
         guard showing != nil else { return }
         showing = nil
-        host.rootView = PreviewCard(image: host.rootView.image, shown: false)
+        host.rootView = PreviewCard(image: host.rootView.image, veiled: host.rootView.veiled, shown: false)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { [weak self] in
             guard let self, self.showing == nil else { return }
             self.panel.orderOut(nil)
@@ -75,12 +75,15 @@ final class HoverPreview {
         showing = url
         // Appearing, it grows out of the card; moving between cards, it just
         // changes picture.
-        host.rootView = PreviewCard(image: image, shown: wasShowing)
+        // In the dark a picture keeps a lighter veil than on the line: it is
+        // being looked at, but should not flash bright.
+        let veiled = cardsAreDark && !isClippedText(url) && !isOtherFile(url)
+        host.rootView = PreviewCard(image: image, veiled: veiled, shown: wasShowing)
         panel.orderFrontRegardless()
         if !wasShowing {
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.showing == url else { return }
-                self.host.rootView = PreviewCard(image: image, shown: true)
+                self.host.rootView = PreviewCard(image: image, veiled: veiled, shown: true)
             }
         }
     }
@@ -94,6 +97,7 @@ final class HoverPreview {
 
 private struct PreviewCard: View {
     let image: NSImage?
+    let veiled: Bool
     let shown: Bool
 
     var body: some View {
@@ -102,6 +106,7 @@ private struct PreviewCard: View {
                 .resizable()
                 .interpolation(.high)
                 .aspectRatio(contentMode: .fit)
+                .overlay(Color.black.opacity(veiled ? 0.14 : 0))
                 .clipShape(RoundedRectangle(cornerRadius: Frame.radius + 2 - Frame.inset, style: .continuous))
                 .padding(Frame.inset + 2)
                 .glassFrame(cornerRadius: Frame.radius + 2)

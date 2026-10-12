@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var hotKey: HotKey?
     private var cancellables = Set<AnyCancellable>()
     private var mouseTimer: Timer?
+    private var appearanceObservation: NSKeyValueObservation?
 
     /// Whether the panel is ordered in. It can be in and still tucked away
     /// above the top edge, like an auto-hiding Dock.
@@ -64,6 +65,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Cards follow the system between light and dark, redrawn as it
+        // switches, unless Appearance in the menu bar picks one.
+        NSApp.appearance = Appearance.current.nsAppearance
+        appearanceChanged()
+        appearanceObservation = NSApp.observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.appearanceChanged() } }
+        }
         let host = NSHostingView(rootView: LineView(line: line))
         host.sizingOptions = []
         panel = LinePanel(content: host)
@@ -459,6 +467,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    // MARK: Appearance
+
+    /// Light or dark, from Appearance in the menu bar. Out of the box the line
+    /// follows the system, switching when it does.
+    enum Appearance: String {
+        case system, light, dark
+
+        static var current: Appearance {
+            get { Appearance(rawValue: UserDefaults.standard.string(forKey: "appearance") ?? "") ?? .system }
+            set { UserDefaults.standard.set(newValue.rawValue, forKey: "appearance") }
+        }
+
+        var nsAppearance: NSAppearance? {
+            switch self {
+            case .system: nil
+            case .light: NSAppearance(named: .aqua)
+            case .dark: NSAppearance(named: .darkAqua)
+            }
+        }
+    }
+
+    /// Setting the app's appearance changes its effective one, which redraws
+    /// the cards through the observation in applicationDidFinishLaunching.
+    private func setAppearance(_ choice: Appearance) {
+        Appearance.current = choice
+        NSApp.appearance = choice.nsAppearance
+    }
+
+    /// Text, link, code and file cards are drawn as pictures, so they do not
+    /// follow the system on their own: each is drawn again in the colours of
+    /// the new appearance.
+    private func appearanceChanged() {
+        let dark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        guard dark != cardsAreDark else { return }
+        cardsAreDark = dark
+        line.reloadThumbnails()
+    }
+
     // MARK: Keyboard
 
     /// Opened with the shortcut, the line takes the keyboard: ← → choose a
@@ -844,6 +890,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         sizeItem.submenu = sizes
         menu.addItem(sizeItem)
+
+        let appearanceItem = NSMenuItem(title: L("Appearance"), action: nil, keyEquivalent: "")
+        let appearances = NSMenu()
+        for (choice, title) in [(Appearance.system, L("Match System")), (.light, L("Light")), (.dark, L("Dark"))] {
+            let item = ClosureMenuItem(title) { [weak self] in self?.setAppearance(choice) }
+            item.state = Appearance.current == choice ? .on : .off
+            appearances.addItem(item)
+        }
+        appearanceItem.submenu = appearances
+        menu.addItem(appearanceItem)
 
         let shortcutItem = NSMenuItem(title: L("Shortcut"), action: nil, keyEquivalent: "")
         let shortcuts = NSMenu()

@@ -67,6 +67,7 @@ enum HistoryMenu {
 /// the line tucking away. A right click lists the history.
 struct HistoryPile: View {
     @ObservedObject var line: Line
+    @Environment(\.colorScheme) private var colorScheme
     @State private var hovering = false
 
     /// How each card under the top one sits: turned and nudged aside.
@@ -124,11 +125,11 @@ struct HistoryPile: View {
     private var pile: some View {
         let thumbs = line.pileThumbs
         // The top card sets the pile's size; the ones under it fit inside.
-        let size = PeggedView.cardSize(for: thumbs.first?.size ?? CGSize(width: 4, height: 3))
+        let size = PeggedView.cardSize(for: thumbs.first?.image.size ?? CGSize(width: 4, height: 3))
         return ZStack {
             ForEach(Array(thumbs.enumerated().reversed()), id: \.offset) { index, thumb in
                 let fan = Self.fan[min(index, Self.fan.count - 1)]
-                card(thumb, in: size)
+                card(thumb.image, in: size, veiled: thumb.isPicture && colorScheme == .dark && !hovering)
                     .rotationEffect(.degrees(fan.angle * (hovering ? 1.6 : 1)), anchor: .top)
                     .offset(x: fan.x * (hovering ? 1.6 : 1), y: fan.y)
                     .brightness(-0.04 * Double(index))
@@ -167,12 +168,14 @@ struct HistoryPile: View {
 
     /// One card in the pile, framed like a photo on the line, its picture
     /// filling the card so every card in the pile is the same size.
-    private func card(_ thumb: NSImage, in size: CGSize) -> some View {
+    private func card(_ thumb: NSImage, in size: CGSize, veiled: Bool) -> some View {
         Image(nsImage: thumb)
             .resizable()
             .interpolation(.high)
             .aspectRatio(contentMode: .fill)
             .frame(width: size.width - Frame.inset * 2, height: size.height - Frame.inset * 2)
+            // In the dark, pictures sit under a dark veil, as on the line.
+            .overlay(Color.black.opacity(veiled ? 0.28 : 0))
             .clipShape(RoundedRectangle(cornerRadius: Frame.radius - Frame.inset, style: .continuous))
             .padding(Frame.inset)
             .glassFrame(cornerRadius: Frame.radius)

@@ -153,9 +153,11 @@ final class Line: ObservableObject {
     private var shown: [Pegged] { items.filter { !isPiled($0) } }
     var shownCount: Int { shown.count }
 
-    /// The newest few history cards, top of the pile first.
-    var pileThumbs: [NSImage] {
-        items.filter { $0.archived && !$0.falling }.suffix(3).reversed().map(\.thumb)
+    /// The newest few history cards, top of the pile first, and whether each
+    /// is a picture, which sits under a veil in the dark.
+    var pileThumbs: [(image: NSImage, isPicture: Bool)] {
+        items.filter { $0.archived && !$0.falling }.suffix(3).reversed()
+            .map { ($0.thumb, $0.isPicture || $0.isRecording) }
     }
 
     private let storeKey = "pegged"

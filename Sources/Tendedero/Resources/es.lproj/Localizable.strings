@@ -77,3 +77,7 @@
 "Pin" = "Fijar";
 "Unpin" = "Dejar de fijar";
 "Search" = "Buscar";
+"Appearance" = "Apariencia";
+"Match System" = "Igual que el sistema";
+"Light" = "Claro";
+"Dark" = "Oscuro";
