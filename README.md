@@ -46,11 +46,13 @@ Rest the pointer in the menu bar and it glides down. Move away and it's gone.
 
 | | |
 |:--|:--|
-| Click | Copy the image. |
-| Press and hold | Open it in Markup. |
+| Click | Copy it. |
+| Rest the pointer on it | See it larger, just below the line. |
+| Press and hold | Open it in Markup. Text opens in its editor, a file in Quick Look. |
 | Double click | Open it in Preview. |
 | Force click | Take a quick look. |
-| Drag into an app | Send a copy. It stays on the line. |
+| Right click | Pin it, hang it again, show it in Finder and more. |
+| Drag into an app | Send a copy. It stays on the line. Text arrives as text. |
 | Drag into a folder | Keep it there. It leaves the line. |
 | Drag to the Trash, or click the cross | Let it go. |
 | Rest the pointer in the menu bar | Bring the line down on that screen. |
@@ -72,20 +74,69 @@ Same shortcuts. Same muscle memory. Just less mess.
 
 <br>
 
-## Copied images too.
+## Whatever you copy.
 
-Take a screenshot with <kbd>⌃</kbd> held, or copy an image in Preview, and it
-hangs on the line like any other. Turn on Hang copied images in the menu bar
-and the shirt fills in while it is on. Only images: anything copied along
-with text or a file, and anything a password manager marks as private, is
-left alone.
+Images, text and files each have their own switch in the menu bar: Hang
+copied images, Hang copied text, Hang copied files. The shirt fills in while
+any of them is on. Anything a password manager marks as private is left
+alone.
+
+- **Images.** Take a screenshot with <kbd>⌃</kbd> held, or copy an image in Preview, and it hangs like any other.
+- **Text.** It hangs as a note. Formatting from Word, Pages or a web page is kept and pastes back with it.
+- **Links** show their site in large type. **Colours** like `#FF8800` fill the card. **Code** keeps its indentation in a monospaced face.
+- **Files** copied in Finder hang where they are, as their icon or a preview. Taking one down never deletes it.
+
+Each kind hangs from its own clip: aluminium for pictures, rose for
+recordings, birch for text, blue for links, graphite for code, brass for
+files, and a copied colour in its own colour.
+
+Copy the same thing twice and its card moves to the newest end instead of
+hanging twice.
+
+<br>
+
+## A history, not a cliff.
+
+A full line no longer lets its oldest card fall. It joins the history,
+piled up in the first place on the line. Rest on the pile, or click it, and
+the history spreads along the line, six at a time, with room to swipe
+through the rest. The line gives a little at either end and springs back.
+It piles up again when the line tucks away.
+
+Take a card down and the newest one in the history comes back to fill its
+place. Pin a card and it never leaves for the history. The history keeps up
+to 100 cards and is also listed in the menu bar.
+
+**Search.** A tag hangs from the spread-out history. Type in it and only
+the cards that match stay on the line, from the line and the history alike.
+It looks in names, copied text, PDFs, documents and plain-text files, the
+files in a folder, and the words in pictures, read by your Mac's own text
+recognition.
+
+<br>
+
+## Keys too.
+
+Open the line with the shortcut and it takes the keyboard. Open it any
+other way and typing carries on where it was.
+
+| | |
+|:--|:--|
+| <kbd>←</kbd>&thinsp;<kbd>→</kbd> | Choose a card. |
+| <kbd>Return</kbd> | Copy it. |
+| <kbd>Space</kbd> | Take a quick look. |
+| <kbd>⌘</kbd>&thinsp;<kbd>1</kbd> to <kbd>⌘</kbd>&thinsp;<kbd>9</kbd> | Copy the newest cards. |
+| <kbd>Esc</kbd> | Put the line away. |
 
 <br>
 
 ## Private by design.
 
 No account. No network. No analytics.
-Tendedero runs entirely on your Mac, and your screenshots never leave it.
+Tendedero runs entirely on your Mac, and nothing you capture or copy leaves
+it. Links are shown without opening them. Text in pictures is read on your
+Mac, and what search has read stays in Tendedero's folder, readable only by
+you.
 
 <br>
 
@@ -94,7 +145,7 @@ Tendedero runs entirely on your Mac, and your screenshots never leave it.
 | | |
 |:--|:--|
 | **Compatibility** | macOS 14 Sonoma or later, on Apple silicon and Intel. Designed for macOS 27. |
-| **Size** | 1.7 MB |
+| **Size** | 4.2 MB |
 | **Languages** | English, Spanish, Galician, French, Portuguese (Brazil), Japanese, Korean, Chinese (Simplified), Turkish, Azerbaijani |
 | **Built with** | Swift, AppKit and SwiftUI |
 | **Network access** | None |
@@ -126,8 +177,17 @@ scripts/build-app.sh
 open build/Tendedero.app
 ```
 
+Or build and install it in Applications in one go, replacing the copy there:
+
+```sh
+scripts/install.sh
+```
+
 Requires the Swift toolchain. Xcode is optional. With the Command Line Tools for macOS 27, the script falls back to the macOS 26 SDK they install alongside, because the new SDK needs a SwiftUI macro plugin only Xcode includes. Local builds are signed ad hoc,
-so macOS asks again for access to the Desktop after each rebuild.
+so macOS asks again for access to the Desktop after each rebuild. To keep
+that access, create a self-signed code signing certificate named
+`Tendedero Local` in Keychain Access (Certificate Assistant, Create a
+Certificate, Code Signing). The scripts sign with it when it is there.
 
 <details>
 <summary>Inside the app</summary>
@@ -140,8 +200,12 @@ so macOS asks again for access to the Desktop after each rebuild.
 | `LineView.swift` | The line and where each photo hangs |
 | `PeggedView.swift` | One photo: glass frame, clip, swing and breeze |
 | `GrabArea.swift` | Click, long press, drag and drop |
+| `Cards.swift` | Draws text, links, colours, code and files as cards |
+| `History.swift` | The history pile, its search tag and its menu |
+| `HoverPreview.swift` | Shows a card larger below the line |
+| `SearchIndex.swift` | Reads the words in pictures and files for search |
 | `ScreenshotWatcher.swift` | Notices new screenshots |
-| `ClipboardWatcher.swift` | Notices images copied to the clipboard |
+| `ClipboardWatcher.swift` | Notices images, text and files copied to the clipboard |
 | `Inbox.swift` | Takes over screenshot settings and puts them back |
 | `Markup.swift` | Opens the system Markup editor and saves the result |
 | `Trim.swift` | Trims a screen recording and saves the result |
