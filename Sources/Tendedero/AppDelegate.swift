@@ -65,6 +65,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Measures the menu bar's empty stretch, which brings the line down.
+        MenuBarSpace.shared.start()
+
         // `open -a Tendedero --args --open-at-login` turns on Open at login
         // from the command line, as the menu bar item does, for scripts that
         // install the app.
@@ -601,6 +604,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return NSRect(x: screen.frame.minX, y: screen.frame.maxY - h, width: screen.frame.width, height: h)
     }
 
+    /// Where resting the pointer brings the line down: the empty stretch of
+    /// the menu bar, from the end of the front app's menus to the first icon,
+    /// as measured by MenuBarSpace, and the notch, which nothing ever sits
+    /// under. Reaching for a menu or an icon never brings the line down.
+    /// Without Accessibility access to measure, a fixed stretch around the
+    /// notch, or the middle of the menu bar on a screen without one.
+    static func revealZones(of screen: NSScreen) -> [NSRect] {
+        let band = menuBarBand(of: screen)
+        // Up to the very top edge, where the pointer stops when pushed.
+        let top = screen.frame.maxY - band.minY
+        func strip(_ minX: CGFloat, _ maxX: CGFloat) -> NSRect {
+            NSRect(x: max(minX, band.minX), y: band.minY, width: min(maxX, band.maxX) - max(minX, band.minX), height: top)
+        }
+        var notch: NSRect?
+        if let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea, right.minX > left.maxX {
+            notch = strip(left.maxX, right.minX)
+        }
+        guard let empty = MenuBarSpace.shared.empty else {
+            if let notch { return [notch.insetBy(dx: -fixedBesideNotch, dy: 0)] }
+            return [strip(band.midX - fixedWidth / 2, band.midX + fixedWidth / 2)]
+        }
+        var zones = notch.map { [$0] } ?? []
+        let from = screen.frame.minX + empty.left + clearOfMenus
+        let to = screen.frame.maxX - empty.right - clearOfMenus
+        if to - from >= 24 { zones.append(strip(from, to)) }
+        return zones
+    }
+
+    /// Kept clear beside the last menu and the first icon.
+    private static let clearOfMenus: CGFloat = 10
+    /// The fixed zone, used until the menu bar can be measured.
+    private static let fixedBesideNotch: CGFloat = 80
+    private static let fixedWidth: CGFloat = 200
+
     /// A click anywhere in the top bar of any screen, a menu or an icon, puts the line away.
     private func watchMenuBarClicks() {
         let handler: (NSEvent?) -> Void = { [weak self] _ in
@@ -633,12 +670,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let screenUnderPointer = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) }
         let inMenuBar = screenUnderPointer.map { NSMouseInRect(mouse, Self.menuBarBand(of: $0), false) } ?? false
         if !inMenuBar { menuBarSuppressed = false }
+        let inRevealZone = screenUnderPointer.map { screen in
+            Self.revealZones(of: screen).contains { NSMouseInRect(mouse, $0, false) }
+        } ?? false
 
         guard isRevealed else {
-            // Resting in the menu bar brings the line down on that screen.
+            // Resting at the notch brings the line down on that screen.
             // Pushing against the top edge is part of it, and it also works
             // when another display sits above and the pointer never stops.
-            if Self.opensFromMenuBar, let screen = screenUnderPointer, inMenuBar, !menuBarSuppressed,
+            if Self.opensFromMenuBar, let screen = screenUnderPointer, inRevealZone, !menuBarSuppressed,
                !FullScreen.blocksLine(on: screen) {
                 let since = hotZoneSince ?? now
                 hotZoneSince = since
@@ -832,7 +872,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let bringDown = NSMenuItem(title: L("Bring the line down"), action: nil, keyEquivalent: "")
         let options = NSMenu()
-        let hover = ClosureMenuItem(L("When the pointer rests in the menu bar")) {
+        let hover = ClosureMenuItem(L("When the pointer rests at the notch")) {
             AppDelegate.opensFromMenuBar.toggle()
         }
         hover.state = Self.opensFromMenuBar ? .on : .off

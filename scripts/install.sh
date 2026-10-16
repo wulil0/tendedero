@@ -13,6 +13,7 @@ scripts/build-app.sh "${1:-release}"
 pkill -x Tendedero || true
 sleep 1
 rm -rf /Applications/Tendedero.app
-cp -R build/Tendedero.app /Applications/
+# Moved, not copied, so Spotlight finds one Tendedero and not two.
+mv build/Tendedero.app /Applications/
 open /Applications/Tendedero.app
 echo "Installed /Applications/Tendedero.app"

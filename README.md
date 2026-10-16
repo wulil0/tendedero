@@ -24,7 +24,7 @@
 ## Out of sight. Within reach.
 
 Every screenshot you take hangs on a line just above your screen.
-Rest the pointer in the menu bar and it glides down. Move away and it's gone.
+Rest the pointer at the notch and it glides down. Move away and it's gone.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/demo-dark.gif">
@@ -55,7 +55,7 @@ Rest the pointer in the menu bar and it glides down. Move away and it's gone.
 | Drag into an app | Send a copy. It stays on the line. Text arrives as text. |
 | Drag into a folder | Keep it there. It leaves the line. |
 | Drag to the Trash, or click the cross | Let it go. |
-| Rest the pointer in the menu bar | Bring the line down on that screen. |
+| Rest the pointer at the notch | Bring the line down on that screen. So does the empty menu bar between the front app's menus and the icons, measured as they change. Menus and icons never bring it down. |
 | Click anything in the menu bar | Put it away. |
 | <kbd>⌃</kbd>&thinsp;<kbd>⌥</kbd>&thinsp;<kbd>T</kbd> | Show or hide the line. Change it under Shortcut in the menu bar. |
 
@@ -144,6 +144,9 @@ does, choose under Appearance in the menu bar.
 ## Private by design.
 
 No account. No network. No analytics.
+Accessibility access, if you give it, is only used to see where the menu
+bar's menus and icons are, so the line comes down in the empty space
+between them.
 Tendedero runs entirely on your Mac, and nothing you capture or copy leaves
 it. Links are shown without opening them. Text in pictures is read on your
 Mac, and what search has read stays in Tendedero's folder, readable only by
@@ -221,6 +224,7 @@ Certificate, Code Signing). The scripts sign with it when it is there.
 | `History.swift` | The history pile, its search tag and its menu |
 | `HoverPreview.swift` | Shows a card larger below the line |
 | `SearchIndex.swift` | Reads the words in pictures and files for search |
+| `MenuBarSpace.swift` | Measures the empty menu bar between menus and icons |
 | `ScreenshotWatcher.swift` | Notices new screenshots |
 | `ClipboardWatcher.swift` | Notices images, text and files copied to the clipboard |
 | `Inbox.swift` | Takes over screenshot settings and puts them back |

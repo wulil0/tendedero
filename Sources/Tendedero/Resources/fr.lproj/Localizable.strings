@@ -37,7 +37,7 @@
 "Medium" = "Moyenne";
 "Large" = "Grande";
 "Bring the line down" = "Faire descendre la corde";
-"When the pointer rests in the menu bar" = "Quand le pointeur reste dans la barre des menus";
+"When the pointer rests at the notch" = "Quand le pointeur reste sur l’encoche";
 "When something new hangs" = "Quand une nouvelle capture s’accroche";
 "Over full screen apps" = "Au-dessus des apps en plein écran";
 "Hang copied images" = "Accrocher les images copiées";
